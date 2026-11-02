@@ -1,5 +1,6 @@
 import type { CaptureMode, CollectEvent, Order } from "@agentpickup/core";
 import type { FacilitatorClient } from "@x402/core/server";
+import type { MppRailConfig } from "./rails/mpp.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 
@@ -59,6 +60,8 @@ export interface CollectConfig {
   payments: {
     card?: StripeRailConfig;
     x402?: X402RailConfig;
+    /** MPP (Machine Payments Protocol): agents pay by card or Link through Stripe Shared Payment Tokens. */
+    mpp?: MppRailConfig;
     /** Instant pretend payments for demos and local work. Never enable on a real shop. */
     test?: boolean;
   };

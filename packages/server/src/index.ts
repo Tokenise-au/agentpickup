@@ -25,11 +25,13 @@ import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "
 import { stripeCardRail } from "./rails/stripe.js";
 import { X402_PAY_ROUTE, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
 import { createSiwxGate } from "./siwx.js";
+import { challengeIdOf, createMppRail, MPP_PAY_ROUTE } from "./rails/mpp.js";
 import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
 import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
 
 export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
+export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
 export { SqliteStore, type Store, type StoredEmail } from "./store.js";
 export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
 
@@ -77,6 +79,9 @@ export function createCollect(config: CollectConfig) {
   const windowMs = (config.collectWindowMinutes ?? 24 * 60) * 60_000;
   const card = config.payments.card ? stripeCardRail(config.payments.card) : null;
   const x402 = config.payments.x402 ?? null;
+  const mpp = config.payments.mpp
+    ? createMppRail(config.payments.mpp, { realm: new URL(base).host, currency, merchantName: merchant.name })
+    : null;
   if (x402 && currency !== "usd") {
     throw new Error("x402 prices are in USD (USDC). Set currency to 'usd' or leave x402 off.");
   }
@@ -149,8 +154,9 @@ export function createCollect(config: CollectConfig) {
     const rail = input.rail;
     if (rail === "card" && !card) throw new InputError("Card payments aren't set up.");
     if (rail === "x402" && !x402) throw new InputError("Agent payments aren't set up.");
+    if (rail === "mpp" && !mpp) throw new InputError("MPP payments aren't set up.");
     if (rail === "test" && !config.payments.test) throw new InputError("Test payments are off.");
-    if (!["card", "x402", "test"].includes(rail)) throw new InputError("Unknown payment method.");
+    if (!["card", "x402", "mpp", "test"].includes(rail)) throw new InputError("Unknown payment method.");
 
     const email = input.email?.trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError("That email doesn't look right.");
@@ -167,7 +173,8 @@ export function createCollect(config: CollectConfig) {
       id: newId("ord"),
       status: "awaiting_payment",
       rail,
-      captureMode: rail === "x402" ? "charge" : rail === "card" ? (config.payments.card?.captureMode ?? "hold") : "hold",
+      captureMode:
+        rail === "x402" || rail === "mpp" ? "charge" : rail === "card" ? (config.payments.card?.captureMode ?? "hold") : "hold",
       items,
       totalCents: items.reduce((sum, i) => sum + i.qty * i.unitCents, 0),
       currency,
@@ -259,6 +266,7 @@ export function createCollect(config: CollectConfig) {
   function paymentLabel(o: Order): string {
     if (o.rail === "card") return o.captureMode === "hold" ? "Card on hold: taken at handover" : "Paid by card";
     if (o.rail === "x402") return "Paid by agent in USDC";
+    if (o.rail === "mpp") return "Paid by agent through Stripe (MPP)";
     return "Test payment: no money moves";
   }
 
@@ -297,7 +305,7 @@ export function createCollect(config: CollectConfig) {
     const amount = formatMoney(claimed.totalCents, claimed.currency);
     const message = captured
       ? `${amount} taken from the card hold.`
-      : claimed.rail === "x402"
+      : claimed.rail === "x402" || claimed.rail === "mpp"
         ? `${amount} was paid by agent at order time.`
         : claimed.rail === "card"
           ? `${amount} was paid by card at order time.`
@@ -326,6 +334,12 @@ export function createCollect(config: CollectConfig) {
         } else if (o.rail === "x402") {
           refundDue = config.noShowPolicy !== "keep";
           outcome = refundDue ? "refund_due" : "kept";
+        } else if (o.rail === "mpp" && mpp && o.paymentRef) {
+          if (config.noShowPolicy === "keep") outcome = "kept";
+          else {
+            await mpp.refund(o.paymentRef);
+            outcome = "refunded";
+          }
         }
         const expired = store.transition(o.id, ["paid", "ready"], "expired", { refundDue });
         if (expired) await emit("order.expired", expired, { outcome });
@@ -383,7 +397,7 @@ export function createCollect(config: CollectConfig) {
         merchant,
         catalog: config.catalog,
         currency,
-        rails: { card: Boolean(card), x402: Boolean(x402), test: Boolean(config.payments.test) },
+        rails: { card: Boolean(card), x402: Boolean(x402), mpp: Boolean(mpp), test: Boolean(config.payments.test) },
       }),
     ),
   );
@@ -402,6 +416,7 @@ export function createCollect(config: CollectConfig) {
       payments: {
         card: Boolean(card),
         x402: x402 ? { network: x402.network ?? "eip155:84532", payTo: x402.payTo } : null,
+        mpp: mpp ? { methods: ["stripe"], intent: "charge", currency } : null,
         test: Boolean(config.payments.test),
       },
     }),
@@ -445,9 +460,53 @@ export function createCollect(config: CollectConfig) {
         201,
       );
     }
+    if (order.rail === "mpp") {
+      return c.json(
+        {
+          order: publicOrder(order),
+          next: {
+            type: "mpp",
+            method: "POST",
+            url: `${base}/api/orders/${order.id}/mpp`,
+            note: "POST with an MPP client (card or Link through a Stripe Shared Payment Token). The pickup QR is emailed once paid.",
+          },
+        },
+        201,
+      );
+    }
     const paid = await markPaid(order.id, { paymentRef: `test_${order.id}` });
     return c.json({ order: publicOrder(paid), next: { type: "done", passUrl: passUrl(paid) } }, 201);
   });
+
+  if (mpp) {
+    app.post(MPP_PAY_ROUTE, async (c) => {
+      const order = store.getOrder(c.req.param("id"));
+      if (!order || order.rail !== "mpp") return c.json({ error: "Order not found." }, 404);
+      if (order.status !== "awaiting_payment") {
+        // The same credential retried after success gets the original answer.
+        const challengeId = challengeIdOf(c.req.header("Authorization"));
+        const paidEvent = challengeId
+          ? store.listEvents(order.id).find((e) => e.type === "order.paid" && e.data?.mppChallengeId === challengeId)
+          : undefined;
+        if (paidEvent) {
+          return c.json({ order: publicOrder(order), passUrl: passUrl(order), emailedTo: order.customerEmail, replayed: true });
+        }
+        return c.json({ error: `Order is ${order.status}.`, order: publicOrder(order) }, 409);
+      }
+      let result;
+      try {
+        result = await mpp.charge(c.req.raw, order);
+      } catch (err) {
+        return c.json({ error: "Payment could not be completed.", detail: String((err as Error).message) }, 402);
+      }
+      if (result.kind === "challenge") return result.response;
+      const paid = await markPaid(order.id, {
+        paymentRef: result.paymentIntentId,
+        meta: { method: "mpp/stripe", mppChallengeId: result.challengeId },
+      });
+      return result.respond(Response.json({ order: publicOrder(paid), passUrl: passUrl(paid), emailedTo: paid.customerEmail }));
+    });
+  }
 
   app.get("/api/orders/:id", (c) => {
     const order = store.getOrder(c.req.param("id"));

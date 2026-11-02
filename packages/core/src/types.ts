@@ -1,4 +1,4 @@
-export type PaymentRail = "card" | "x402" | "test";
+export type PaymentRail = "card" | "x402" | "mpp" | "test";
 
 /**
  * awaiting_payment → paid → (ready) → collected

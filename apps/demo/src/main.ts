@@ -51,6 +51,10 @@ const collect = createCollect({
     x402: env.X402_PAY_TO
       ? { payTo: env.X402_PAY_TO, network: (env.X402_NETWORK as `${string}:${string}`) ?? "eip155:84532" }
       : undefined,
+    mpp:
+      env.STRIPE_SECRET_KEY && env.MPP_NETWORK_ID && env.MPP_CHALLENGE_SECRET
+        ? { stripeSecretKey: env.STRIPE_SECRET_KEY, networkId: env.MPP_NETWORK_ID, challengeSecret: env.MPP_CHALLENGE_SECRET }
+        : undefined,
     test: true,
   },
   collectWindowMinutes: 120,

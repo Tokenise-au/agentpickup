@@ -20,13 +20,13 @@ export function openApiDocument(o: {
   merchant: MerchantProfile;
   catalog: CatalogItem[];
   currency: string;
-  rails: { card: boolean; x402: boolean; test: boolean };
+  rails: { card: boolean; x402: boolean; mpp: boolean; test: boolean };
 }) {
   const prices = o.catalog.map((i) => i.priceCents);
   const usd = (cents: number) => (cents / 100).toFixed(2);
   const free = { security: [] as unknown[] };
   const json = (schema: Record<string, unknown>) => ({ content: { "application/json": { schema } } });
-  const rails = [o.rails.card && "card", o.rails.x402 && "x402", o.rails.test && "test"].filter(Boolean);
+  const rails = [o.rails.card && "card", o.rails.x402 && "x402", o.rails.mpp && "mpp", o.rails.test && "test"].filter(Boolean);
 
   const paths: Record<string, unknown> = {
     "/api/catalog": {
@@ -97,6 +97,25 @@ export function openApiDocument(o: {
         summary: "Fetch the pickup pass again by signing in with the wallet that paid",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "Pass link and pickup code" }, 402: { description: "Sign-in challenge" }, 403: { description: "Signed in, but not the payer" } },
+      },
+    };
+  }
+
+  if (o.rails.mpp) {
+    paths["/api/orders/{id}/mpp"] = {
+      post: {
+        operationId: "payOrderMpp",
+        summary: "Pay for an order over MPP: card or Link through a Stripe Shared Payment Token.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        // MPP discovery: one offer per method; the amount depends on the order, so it is null here.
+        "x-payment-info": {
+          offers: [{ amount: null, currency: o.currency, intent: "charge", method: "stripe", description: "Pickup order" }],
+        },
+        responses: {
+          200: { description: "Paid. Returns the order and the pass link, with a Payment-Receipt header." },
+          402: { description: "Payment Required (WWW-Authenticate: Payment)" },
+          409: { description: "The order is not awaiting payment" },
+        },
       },
     };
   }
