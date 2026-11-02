@@ -81,7 +81,7 @@ section { scroll-margin-top: 76px; }
 .badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: rgba(17, 19, 22, .8); border-radius: 999px; padding: 6px 12px; font: 12.5px var(--mono); color: var(--muted); }
 .badge b { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); }
 h1 { font-weight: 700; font-size: clamp(42px, 5.4vw, 74px); line-height: .97; letter-spacing: -.045em; margin-top: 22px; }
-h1 em { font-style: normal; color: var(--lime); }
+h1 em { font-style: normal; color: var(--lime); white-space: nowrap; }
 .lede { color: var(--text-2); font-size: 18px; max-width: 33em; margin-top: 22px; }
 .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 30px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 40px; border: 1px solid var(--line); border-radius: 14px; background: rgba(17, 19, 22, .72); }
