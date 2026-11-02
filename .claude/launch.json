@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "collect-demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file-if-exists=.env", "--import", "tsx", "apps/demo/src/main.ts"],
+      "port": 8402
+    }
+  ]
+}

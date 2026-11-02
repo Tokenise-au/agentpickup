@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>agentPickup: sell online, hand over in person</title>
+<meta name="description" content="Card or agent checkout, a signed QR by email, and payment captured the moment staff scan it. An open-source library for click and collect.">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="agentPickup home"><i></i><span><span class="dim">agent</span>Pickup</span></a>
+    <nav class="links" aria-label="Sections">
+      <a href="#how">/how</a><a href="#demo">/demo</a><a href="#developers">/developers</a><a href="#pricing">/pricing</a>
+    </nav>
+    <a class="pill" href="#waitlist">Get early access ↗</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="wrap hero">
+    <div class="hero-copy">
+      <span class="badge"><b></b>Stripe holds · x402 on Base · open source</span>
+      <h1>Sell online.<br>Hand over <em>in person.</em></h1>
+      <p class="lede">Customers, or the AI agents shopping for them, pay by card or USDC. They get a signed QR by email. Staff scan it at the counter and that's when the money moves. It's a library you mount in your own server, so your customers only ever see your brand.</p>
+      <div class="cta">
+        <a class="btn btn-white" href="#demo">Try the live demo ↗</a>
+        <button class="btn btn-outline mono" id="copyInstall" type="button" title="Copy install command">npm i @agentpickup/server</button>
+      </div>
+      <div class="stats">
+        <div><b>1 scan</b><span>completes the sale</span></div>
+        <div><b>0 apps</b><span>for staff or shoppers</span></div>
+        <div><b>~250 B</b><span>signed pass in the QR</span></div>
+      </div>
+    </div>
+
+    <div class="term hero-term" aria-label="Example order events">
+      <div class="term-top"><i></i><i></i><i></i><span>demo-cafe · events</span><span class="live">● live</span></div>
+      <div class="log" id="heroLog">
+        <div><span class="t">08:38:02</span><span class="e">order.created</span><span class="d">2× flat white, 1× croissant</span><span class="v">$14.50</span></div>
+        <div><span class="t">08:38:09</span><span class="e am">order.paid</span><span class="d">card · hold pi_3Qx…</span><span class="v am">held</span></div>
+        <div><span class="t">08:38:09</span><span class="e">pass.emailed</span><span class="d">sam@… · QR + code</span><span class="v">✓</span></div>
+        <div><span class="t">08:41:17</span><span class="e vi">order.ready</span><span class="d">second email sent</span><span class="v">✓</span></div>
+        <div><span class="t">08:44:03</span><span class="e ok">order.collected</span><span class="d">scanned at the counter</span><span class="v ok">captured</span></div>
+      </div>
+      <div class="pass">
+        <div class="qr" id="heroQr"></div>
+        <div>
+          <div class="k">Pickup code</div>
+          <div class="code">K7P4QX</div>
+          <div class="k">Ed25519 · single use · expires 10:38</div>
+          <span class="cap">$14.50 captured</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="wrap section">
+    <p class="eyebrow">/how</p>
+    <h2>Five steps, one QR</h2>
+    <p class="sub">The same flow for a coffee, a repaired phone or a parcel at the door.</p>
+    <div class="table">
+      <div class="tr th"><span>#</span><span>Step</span><span>What happens</span><span>Under the hood</span></div>
+      <div class="tr"><span class="n">01</span><span class="h">Buy online</span><span class="p">On your site, in a chat, or an AI agent calling your shop's API.</span><span class="chip">POST /api/orders</span></div>
+      <div class="tr"><span class="n">02</span><span class="h">Pay</span><span class="p">Card through your Stripe, held and not charged. Or USDC over x402, no sign-up needed.</span><span class="chip">Stripe · x402</span></div>
+      <div class="tr"><span class="n">03</span><span class="h">Get the QR</span><span class="p">An email from your address with a signed QR and a six-letter pickup code.</span><span class="chip">pass.emailed</span></div>
+      <div class="tr"><span class="n">04</span><span class="h">Scan</span><span class="p">Any phone camera or USB scanner opens the hand-over screen. Nothing to install.</span><span class="chip">/staff</span></div>
+      <div class="tr"><span class="n">05</span><span class="h">Hand over</span><span class="p">The hold is captured. If nobody collects, the hold is released automatically.</span><span class="chip lime">order.collected</span></div>
+    </div>
+  </section>
+
+  <section id="demo" class="wrap section">
+    <p class="eyebrow">/demo</p>
+    <h2>Run an order end to end</h2>
+    <p class="sub">Order from Demo Café, see the email it sends, then scan it the way staff would. Test payments only: no real money moves.</p>
+
+    <div class="demo">
+      <div class="term shop">
+        <div class="term-top"><i></i><i></i><i></i><span>demo-cafe · menu</span><span class="tag-test">test mode</span></div>
+        <div class="shop-body">
+          <div id="menu" class="menu"><div class="muted mono small">loading menu…</div></div>
+          <div class="fields">
+            <label><span>name</span><input id="name" type="text" maxlength="60" placeholder="Sam" autocomplete="given-name"></label>
+            <label><span>email for the QR</span><input id="email" type="email" placeholder="you@example.com" autocomplete="email"></label>
+          </div>
+          <div class="total"><span class="mono">total</span><strong id="total">$0.00</strong></div>
+          <div class="pay" id="payRow"></div>
+          <p class="error" id="orderError" role="alert"></p>
+          <div id="agentBox" class="agent-box hidden"></div>
+        </div>
+      </div>
+
+      <div class="term flow" id="flow">
+        <div class="term-top"><i></i><i></i><i></i><span id="flowTitle">order · events</span><span class="live hidden" id="flowLiveDot">● live</span></div>
+        <div class="flow-empty" id="flowEmpty">
+          <p class="mono">$ waiting for an order<span class="cursor">▍</span></p>
+          <p class="muted small">Add something on the left and pay. The events, the email and the scan will show up here.</p>
+        </div>
+        <div id="flowLive" class="hidden">
+          <div class="log" id="orderLog"></div>
+          <div class="inbox">
+            <div class="inbox-top"><span class="mono">inbox</span><span id="emailSubject" class="subject">waiting for the email…</span></div>
+            <iframe id="emailPreview" title="The email the customer receives" loading="lazy"></iframe>
+          </div>
+          <div class="actions">
+            <button class="btn btn-outline" id="markReady" type="button">Mark ready</button>
+            <button class="btn btn-lime" id="simulateScan" type="button">Scan at the counter</button>
+          </div>
+          <p class="muted small center">Or open the <a href="/staff" target="_blank" rel="noopener">staff scanner</a> on another phone and point it at the QR in the email.</p>
+          <div id="scanResult" class="scan-result hidden" role="status"></div>
+          <button class="link-btn" id="newOrder" type="button">start a new order</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section">
+    <p class="eyebrow">/use-cases</p>
+    <h2>Anything handed over in person</h2>
+    <div class="grid-3">
+      <div class="tile"><span class="chip">cafes/</span><h3>Cafés and restaurants</h3><p>Order ahead, skip the queue. Pickup windows, an "it's ready" email, and an optional no-show fee.</p></div>
+      <div class="tile"><span class="chip">retail/</span><h3>Retail click and collect</h3><p>Hold the card at order time and take the money at pickup, so an out-of-stock item never needs a refund.</p></div>
+      <div class="tile"><span class="chip">delivery/</span><h3>Couriers and delivery</h3><p>The scan at the door is proof of delivery, and it releases the payment to the merchant.</p></div>
+      <div class="tile"><span class="chip">events/</span><h3>Events and experiences</h3><p>Signed tickets that can't be forged, checked in at the door with a phone.</p></div>
+      <div class="tile"><span class="chip">lockers/</span><h3>Lockers and kiosks</h3><p>Passes are signed, so a locker can check one against your public key with no network connection.</p></div>
+      <div class="tile"><span class="chip">rentals/</span><h3>Rentals and repairs</h3><p>Hand over the bike, the tool or the repaired phone against a code only the paying customer has.</p></div>
+    </div>
+  </section>
+
+  <section id="developers" class="wrap section dev">
+    <div class="dev-copy">
+      <p class="eyebrow">/developers</p>
+      <h2>A library, not another app for your customers</h2>
+      <p class="sub">Mount it in your server and keep your checkout, your domain and your brand.</p>
+      <ul class="checks">
+        <li><b>Card and crypto.</b> Stripe Checkout with the card held until pickup, or USDC over x402, so AI agents can buy without signing up.</li>
+        <li><b>Signed passes.</b> Each QR is an Ed25519-signed token, good for exactly one pickup. Copied or altered codes are refused.</li>
+        <li><b>Your brand only.</b> Emails, pass pages and the scanner use your name, colours and sending address.</li>
+        <li><b>Plugs into your stack.</b> Signed webhooks for paid, ready, collected and expired orders. SQLite out of the box, or bring your own database.</li>
+        <li><b>Open source.</b> Apache-2.0. Run it yourself for free.</li>
+      </ul>
+    </div>
+    <div class="term code-term">
+      <div class="term-top"><i></i><i></i><i></i><span>server.ts</span></div>
+      <pre class="code-block"><code><span class="k">import</span> { createCollect, SqliteStore, resendMailer } <span class="k">from</span> <span class="s">"@agentpickup/server"</span>;
+
+<span class="k">const</span> pickup = createCollect({
+  baseUrl: <span class="s">"https://orders.yourshop.com"</span>,
+  merchant: {
+    name: <span class="s">"Corner Café"</span>, brandColor: <span class="s">"#9a3412"</span>,
+    fromEmail: <span class="s">"Corner Café &lt;orders@yourshop.com&gt;"</span>,
+    location: { name: <span class="s">"Front counter"</span> },
+  },
+  catalog,
+  payments: {
+    card: { secretKey: env.STRIPE_KEY, captureMode: <span class="s">"hold"</span> },
+    x402: { payTo: env.WALLET, network: <span class="s">"eip155:8453"</span> },
+  },
+  store: <span class="k">new</span> SqliteStore(<span class="s">"./data/pickup.db"</span>),
+  mailer: resendMailer({ apiKey: env.RESEND_KEY }),
+  signingKeyPem: env.PASS_SIGNING_KEY,
+  staffKey: env.STAFF_KEY,
+  onEvent: (e, order) =&gt; pos.push(e.type, order),
+});
+
+app.route(<span class="s">"/"</span>, pickup.app);</code></pre>
+    </div>
+  </section>
+
+  <section id="pricing" class="wrap section">
+    <p class="eyebrow">/pricing</p>
+    <h2>Pay when the customer collects</h2>
+    <p class="sub">Free to run yourself. If we host it, we only earn when a customer walks out with their order.</p>
+    <div class="grid-3 pricing">
+      <div class="tile price">
+        <span class="chip">self-host</span>
+        <div class="amount">Free</div>
+        <p>The full library and scanner, open source under Apache-2.0. Your servers, your keys, no tracking.</p>
+        <a class="btn btn-outline" href="#waitlist">Get the code first</a>
+      </div>
+      <div class="tile price featured">
+        <span class="chip lime">hosted</span>
+        <div class="amount">Per collection</div>
+        <p>We run it on your domain: card and agent checkout, emails, scanner and dashboard. A small fee per completed pickup, and nothing on no-shows.</p>
+        <a class="btn btn-lime" href="#waitlist">Join the waitlist</a>
+      </div>
+      <div class="tile price">
+        <span class="chip">platforms</span>
+        <div class="amount">Let's talk</div>
+        <p>Marketplaces, delivery apps and ordering systems running it for many shops under their own brand, with payouts to each shop.</p>
+        <a class="btn btn-outline" href="#waitlist">Tell us about it</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="waitlist" class="wrap section waitlist">
+    <div>
+      <p class="eyebrow">/early-access</p>
+      <h2>Get early access</h2>
+      <p class="sub">We're opening the hosted version to a few shops and platforms first. Tell us what you'd hand over.</p>
+    </div>
+    <form id="waitlistForm" class="term wl-form">
+      <div class="term-top"><i></i><i></i><i></i><span>early-access</span></div>
+      <div class="wl-body">
+        <label><span>email</span><input name="email" type="email" required placeholder="you@yourshop.com" autocomplete="email"></label>
+        <fieldset>
+          <legend>i'm a</legend>
+          <div class="seg">
+            <label><input type="radio" name="kind" value="shop" checked><span>shop</span></label>
+            <label><input type="radio" name="kind" value="platform"><span>platform</span></label>
+            <label><input type="radio" name="kind" value="developer"><span>developer</span></label>
+          </div>
+        </fieldset>
+        <label><span>what would you sell? <em>(optional)</em></span><textarea name="note" rows="3" maxlength="1000" placeholder="Coffee and pastries, two stores in Brisbane"></textarea></label>
+        <button class="btn btn-white" type="submit">Request access ↗</button>
+        <p class="form-msg mono" id="wlMsg" role="status"></p>
+      </div>
+    </form>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span class="brand small-brand"><i></i><span><span class="dim">agent</span>Pickup <span class="muted">· © 2026</span></span></span>
+    <span class="muted mono small">Demo Café is a demo. Payments on this page are test payments.</span>
+  </div>
+</footer>
+<script src="/site.js"></script>
+</body>
+</html>

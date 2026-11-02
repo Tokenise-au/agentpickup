@@ -1,0 +1,11 @@
+{
+  "name": "@agentpickup/demo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agentpickup/server": "*",
+    "@hono/node-server": "^2.1.6",
+    "hono": "^4.13.16"
+  }
+}

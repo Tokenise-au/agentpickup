@@ -1,0 +1,28 @@
+{
+  "name": "agentpickup",
+  "private": true,
+  "type": "module",
+  "description": "Buy online with a card or an agent payment, get a QR by email, collect in person.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx --watch apps/demo/src/main.ts",
+    "start": "node --env-file-if-exists=.env --import tsx apps/demo/src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test packages/core/test/*.test.ts packages/server/test/*.test.ts"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/qrcode": "^1.5.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "tsx": "^4.23.15"
+  }
+}
