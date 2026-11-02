@@ -5,11 +5,11 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 ## Agent-payment standards
 
 - [x] **Offline x402 test harness**: a fake facilitator plus a real signing client, so every x402 path is covered by tests without a network
-- [ ] **x402 extensions**
-  - [ ] bazaar: discovery metadata on the pay route, plus a `/.well-known/x402` manifest
-  - [ ] offer-and-receipt: signed offers in the 402, signed receipts on settlement (JWS, the merchant's Ed25519 key)
-  - [ ] payment-identifier: retries with the same id never pay twice
-  - [ ] sign-in-with-x: assess and wire up if it adds something for returning agents
+- [x] **x402 extensions**
+  - [x] bazaar: discovery metadata on the pay route, plus `/openapi.json` in the shape x402scan indexes (paid and sign-in routes)
+  - [x] offer-and-receipt: signed offers in the 402, signed receipts on settlement (JWS, the merchant's Ed25519 key, did:web at `/.well-known/did.json`)
+  - [x] payment-identifier: a retry with the same id gets the original result and never settles twice
+  - [x] sign-in-with-x: the paying wallet re-fetches its pass at `GET /api/orders/:id/pass` (single-use nonces bound to the order)
 - [ ] **MPP (Machine Payments Protocol)**: a 402 challenge for agents paying by card through Stripe (Shared Payment Tokens), settling into the merchant's own Stripe
 - [ ] **UCP**: `/.well-known/ucp` profile, checkout sessions with the `pickup` fulfilment method, and the pickup pass on the completed order
 - [ ] **ACP**: checkout session endpoints, delegated payment via Stripe Shared Payment Tokens, and the pickup pass on the order

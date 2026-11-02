@@ -23,7 +23,9 @@ import { renderPassEmail } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
 import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
 import { stripeCardRail } from "./rails/stripe.js";
-import { X402_PAY_ROUTE, readSettlement, x402PayMiddleware } from "./rails/x402.js";
+import { X402_PAY_ROUTE, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
+import { createSiwxGate } from "./siwx.js";
+import { didDocument, openApiDocument } from "./discovery.js";
 
 export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
 export { SqliteStore, type Store, type StoredEmail } from "./store.js";
@@ -194,7 +196,10 @@ export function createCollect(config: CollectConfig) {
   }
 
   /** Idempotent: a second confirmation of the same payment returns the order unchanged. */
-  async function markPaid(orderId: string, payment: { paymentRef: string; payer?: string | null; email?: string | null }) {
+  async function markPaid(
+    orderId: string,
+    payment: { paymentRef: string; payer?: string | null; email?: string | null; meta?: Record<string, unknown> },
+  ) {
     const existing = store.getOrder(orderId);
     if (!existing) throw new InputError("Order not found.", 404);
     if (existing.status !== "awaiting_payment" && existing.status !== "cancelled") return existing;
@@ -210,7 +215,7 @@ export function createCollect(config: CollectConfig) {
       customerEmail: existing.customerEmail ?? payment.email ?? null,
     });
     if (!order) return store.getOrder(orderId)!;
-    await emit("order.paid", order, { paymentRef: payment.paymentRef, payer: payment.payer ?? undefined });
+    await emit("order.paid", order, { paymentRef: payment.paymentRef, payer: payment.payer ?? undefined, ...payment.meta });
     await sendPassEmail(order, "paid");
     return order;
   }
@@ -353,6 +358,17 @@ export function createCollect(config: CollectConfig) {
   app.get("/collect-assets/jsQR.js", asset(jsqr));
   app.get("/collect-assets/scanner.js", asset(scannerJs));
   app.get("/.well-known/collect-keys.json", (c) => c.json(toJwks([key])));
+  app.get("/.well-known/did.json", (c) => c.json(didDocument(base, key)));
+  app.get("/openapi.json", (c) =>
+    c.json(
+      openApiDocument({
+        merchant,
+        catalog: config.catalog,
+        currency,
+        rails: { card: Boolean(card), x402: Boolean(x402), test: Boolean(config.payments.test) },
+      }),
+    ),
+  );
 
   app.onError((err, c) => {
     if (err instanceof InputError) return c.json({ error: err.message }, err.status);
@@ -420,33 +436,79 @@ export function createCollect(config: CollectConfig) {
   if (x402) {
     // Guard and finalise around the x402 middleware: it settles after the handler,
     // so the order is only marked paid once the settlement header is on the response.
+    const paidBody = (o: Order, receipt: unknown, replayed = false) => ({
+      order: publicOrder(o),
+      passUrl: passUrl(o),
+      emailedTo: o.customerEmail,
+      receipt,
+      ...(replayed ? { replayed: true } : {}),
+    });
+
     app.use(X402_PAY_ROUTE, async (c, next) => {
       const id = c.req.param("id")!;
       const order = store.getOrder(id);
       if (!order || order.rail !== "x402") return c.json({ error: "Order not found." }, 404);
+      const paymentId = paymentIdFromRequest(c.req.raw.headers);
       if (order.status !== "awaiting_payment") {
+        // payment-identifier: the same payment retried gets its original result, not a conflict.
+        const paidEvent = paymentId
+          ? store.listEvents(id).find((e) => e.type === "order.paid" && e.data?.paymentId === paymentId)
+          : undefined;
+        if (paidEvent) return c.json(paidBody(order, paidEvent.data?.receipt ?? null, true), 200);
         return c.json({ error: `Order is ${order.status}.`, order: publicOrder(order) }, 409);
       }
       await next();
       const settlement = c.res.status === 200 ? readSettlement(c.res) : null;
       if (!settlement?.success) return;
-      const paid = await markPaid(id, { paymentRef: settlement.transaction, payer: settlement.payer });
+      const receipt = receiptFrom(settlement);
+      const paid = await markPaid(id, {
+        paymentRef: settlement.transaction,
+        payer: settlement.payer,
+        meta: { network: settlement.network, ...(paymentId ? { paymentId } : {}), ...(receipt ? { receipt } : {}) },
+      });
       const headers = new Headers(c.res.headers);
       headers.set("Content-Type", "application/json");
       headers.delete("Content-Length");
-      c.res = new Response(
-        JSON.stringify({ order: publicOrder(paid), passUrl: passUrl(paid), emailedTo: paid.customerEmail }),
-        { status: 200, headers },
-      );
+      c.res = new Response(JSON.stringify(paidBody(paid, receipt)), { status: 200, headers });
     });
     app.use(
       X402_PAY_ROUTE,
-      x402PayMiddleware(x402, (id) => {
-        const o = store.getOrder(id);
-        return o && o.status === "awaiting_payment" && o.rail === "x402" ? `$${(o.totalCents / 100).toFixed(2)}` : null;
+      x402PayMiddleware(x402, {
+        key,
+        baseUrl: base,
+        priceFor: (id) => {
+          const o = store.getOrder(id);
+          return o && o.status === "awaiting_payment" && o.rail === "x402" ? `$${(o.totalCents / 100).toFixed(2)}` : null;
+        },
       }),
     );
     app.post(X402_PAY_ROUTE, (c) => c.json({ ok: true }));
+
+    // Sign-In-With-X: the wallet that paid can fetch the pass again, with no account.
+    const siwx = createSiwxGate({ baseUrl: base, network: x402.network ?? "eip155:84532" });
+    app.get("/api/orders/:id/pass", async (c) => {
+      const order = store.getOrder(c.req.param("id"));
+      if (!order || order.rail !== "x402" || !order.payer || !order.passId) {
+        return c.json({ error: "No agent-paid pass for this order." }, 404);
+      }
+      const header = c.req.header("SIGN-IN-WITH-X");
+      if (!header) {
+        const body = siwx.challenge(order.id, `${base}/api/orders/${order.id}/pass`);
+        c.header("PAYMENT-REQUIRED", Buffer.from(JSON.stringify(body)).toString("base64"));
+        return c.json(body, 402);
+      }
+      const result = await siwx.verify(header, order.id);
+      if (!result.ok) return c.json({ error: result.reason }, 401);
+      if (result.address.toLowerCase() !== order.payer.toLowerCase()) {
+        return c.json({ error: "Signed in, but this wallet didn't pay for the order." }, 403);
+      }
+      return c.json({
+        order: publicOrder(order),
+        passUrl: passUrl(order),
+        pickupCode: order.pickupCode,
+        qrContent: collectLink(order),
+      });
+    });
   }
 
   app.get("/orders/:id/thanks", async (c) => {

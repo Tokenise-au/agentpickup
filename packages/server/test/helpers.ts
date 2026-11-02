@@ -37,8 +37,8 @@ export class FakeFacilitator implements FacilitatorClient {
   }
 }
 
-export function makeAgent() {
-  const account = privateKeyToAccount(generatePrivateKey());
+export function makeAgent(privateKey: `0x${string}` = generatePrivateKey()) {
+  const account = privateKeyToAccount(privateKey);
   // Stock x402 clients refuse anything over $1 per payment; a coffee order needs more headroom.
   const client = x402Client.fromConfig({
     schemes: [{ network: NETWORK, client: new ExactEvmScheme(account) }],
