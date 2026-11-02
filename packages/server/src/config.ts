@@ -75,8 +75,10 @@ export interface CollectConfig {
   noShowPolicy?: "release" | "keep";
   /** Lets /api/orders/:id/email-preview show the last email. For demos only. */
   exposeEmailPreview?: boolean;
-  /** Shared secret for the staff scanner. Without it staff pages are open, which is only for demos. */
+  /** Shared secret for the staff scanner and staff API. */
   staffKey?: string;
+  /** Run staff pages with no key at all. Demos only: without staffKey and this flag, staff routes are closed. */
+  allowOpenStaff?: boolean;
   /** Called for every order event, e.g. to push into a POS or kitchen screen. */
   onEvent?: (event: CollectEvent, order: Order) => void | Promise<void>;
   /** POSTed a signed JSON copy of every event. */

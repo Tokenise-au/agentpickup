@@ -26,6 +26,8 @@ import { stripeCardRail } from "./rails/stripe.js";
 import { X402_PAY_ROUTE, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
 import { createSiwxGate } from "./siwx.js";
 import { didDocument, openApiDocument } from "./discovery.js";
+import { bodyLimit } from "hono/body-limit";
+import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
 
 export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
 export { SqliteStore, type Store, type StoredEmail } from "./store.js";
@@ -337,19 +339,35 @@ export function createCollect(config: CollectConfig) {
 
   const isStaffDevice = (c: Context) => {
     const cookie = getCookie(c, STAFF_COOKIE);
-    if (!staffToken) return Boolean(cookie);
+    if (!staffToken) return staffOpen && Boolean(cookie);
     return Boolean(cookie) && safeEqual(cookie!, staffToken);
   };
 
+  const staffOpen = !staffToken && Boolean(config.allowOpenStaff);
+  if (staffOpen) console.warn("[collect] staff routes are open (allowOpenStaff). Use this for demos only.");
+
   const staffOnly: MiddlewareHandler = async (c, next) => {
-    if (!staffToken) return next();
+    if (staffOpen) return next();
+    if (!staffToken) {
+      return c.json({ title: "Staff access isn't set up", detail: "Set staffKey (or allowOpenStaff for a demo)." }, 403);
+    }
     const header = c.req.header("x-collect-staff-key");
     const fromHeader = header ? createHmac("sha256", header).update("collect-staff-v1").digest("base64url") : null;
     if (isStaffDevice(c) || (fromHeader && safeEqual(fromHeader, staffToken))) return next();
     return c.json({ title: "Staff only", detail: "Sign in on /staff first." }, 401);
   };
 
+  // Failed pass or pickup-code lookups per client: 12 in 10 minutes and the client waits.
+  const lookupThrottle = createFailureThrottle({ max: 12, windowMs: 10 * 60_000 });
+
   const app = new Hono();
+  app.use(
+    "/api/*",
+    bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }),
+  );
+  for (const path of ["/p/*", "/c/*", "/staff", "/staff/*", "/orders/*", "/api/staff/*", "/api/orders/:id/pass"]) {
+    app.use(path, sensitiveHeaders);
+  }
   const require = createRequire(import.meta.url);
   const jsqr = readFileSync(require.resolve("jsqr/dist/jsQR.js"));
   const scannerJs = readFileSync(new URL("../static/scanner.js", import.meta.url));
@@ -388,6 +406,18 @@ export function createCollect(config: CollectConfig) {
       },
     }),
   );
+
+  app.post("/api/orders", async (c, next) => {
+    // Idempotency-Key: a retried create returns the first response instead of a second order.
+    const idemKey = c.req.header("Idempotency-Key");
+    if (!idemKey) return next();
+    if (idemKey.length > 200) throw new InputError("Idempotency-Key is too long.");
+    const scoped = `orders:${idemKey}`;
+    const seen = store.getIdempotent(scoped);
+    if (seen) return c.body(seen.body, seen.status as 201, { "Content-Type": "application/json", "Idempotent-Replayed": "true" });
+    await next();
+    if (c.res.status === 201) store.putIdempotent(scoped, 201, await c.res.clone().text());
+  });
 
   app.post("/api/orders", async (c) => {
     const input = (await c.req.json().catch(() => null)) as OrderInput | null;
@@ -573,9 +603,12 @@ export function createCollect(config: CollectConfig) {
   });
 
   app.get("/staff", (c) => {
+    if (!staffToken && !staffOpen) {
+      return c.html(messagePage(merchant, "Staff access isn't set up", "Ask the shop to set a staff key."), 403);
+    }
     if (staffToken && !isStaffDevice(c)) return c.html(staffLoginPage(merchant));
-    if (!staffToken) setCookie(c, STAFF_COOKIE, "open", { path: "/", sameSite: "Lax", httpOnly: true, maxAge: 60 * 60 * 24 * 30 });
-    return c.html(scannerPage({ merchant, open: !staffToken, prefill: c.req.query("scan") }));
+    if (staffOpen) setCookie(c, STAFF_COOKIE, "open", { path: "/", sameSite: "Lax", httpOnly: true, maxAge: 60 * 60 * 24 * 30 });
+    return c.html(scannerPage({ merchant, open: staffOpen, prefill: c.req.query("scan") }));
   });
 
   app.post("/staff/login", async (c) => {
@@ -593,10 +626,20 @@ export function createCollect(config: CollectConfig) {
     return c.redirect("/staff");
   });
 
-  app.post("/api/staff/lookup", staffOnly, async (c) => {
+  const throttled: MiddlewareHandler = async (c, next) => {
+    if (lookupThrottle.blocked(clientKey(c))) {
+      return c.json({ title: "Too many failed scans", detail: "Wait a few minutes and try again." }, 429);
+    }
+    return next();
+  };
+
+  app.post("/api/staff/lookup", staffOnly, throttled, async (c) => {
     const { scan } = (await c.req.json().catch(() => ({}))) as { scan?: unknown };
     const resolved = resolveScan(scan);
-    if ("error" in resolved) return c.json(resolved.error, resolved.error.status);
+    if ("error" in resolved) {
+      lookupThrottle.fail(clientKey(c));
+      return c.json(resolved.error, resolved.error.status);
+    }
     const o = resolved.order;
     return c.json({
       order: staffView(o),
@@ -606,10 +649,13 @@ export function createCollect(config: CollectConfig) {
     });
   });
 
-  app.post("/api/staff/collect", staffOnly, async (c) => {
+  app.post("/api/staff/collect", staffOnly, throttled, async (c) => {
     const { scan } = (await c.req.json().catch(() => ({}))) as { scan?: unknown };
     const result = await collect(scan);
-    if (!result.ok) return c.json({ title: result.title, detail: result.detail }, result.status);
+    if (!result.ok) {
+      if (result.status !== 409) lookupThrottle.fail(clientKey(c));
+      return c.json({ title: result.title, detail: result.detail }, result.status);
+    }
     return c.json({ order: staffView(result.order), message: result.message });
   });
 

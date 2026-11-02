@@ -64,6 +64,7 @@ export function setupShop(extra: Partial<CollectConfig> = {}) {
     signingKeyPem: generateSigningKeyPem(),
     payments: { test: true, x402: { payTo: PAY_TO, network: NETWORK, facilitator } },
     exposeEmailPreview: true,
+    allowOpenStaff: true,
     ...extra,
   });
   const call = (path: string, init?: RequestInit) => collect.app.request(`https://shop.test${path}`, init);

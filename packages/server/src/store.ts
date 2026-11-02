@@ -27,6 +27,9 @@ export interface Store {
   listEvents(orderId: string): CollectEvent[];
   saveEmail(email: StoredEmail): void;
   getLatestEmail(orderId: string): StoredEmail | null;
+  /** Responses already sent for an Idempotency-Key, so a retried request gets the same answer. */
+  getIdempotent(key: string): { status: number; body: string } | null;
+  putIdempotent(key: string, status: number, body: string): void;
 }
 
 const COLUMNS: Record<keyof Order, string> = {
@@ -135,6 +138,12 @@ export class SqliteStore implements Store {
         at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS emails_order ON emails (order_id, at);
+      CREATE TABLE IF NOT EXISTS idempotency (
+        key TEXT PRIMARY KEY,
+        status INTEGER NOT NULL,
+        body TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
     `);
   }
 
@@ -232,6 +241,19 @@ export class SqliteStore implements Store {
     this.db
       .prepare("INSERT INTO emails (id, order_id, recipient, subject, html, at) VALUES (?, ?, ?, ?, ?, ?)")
       .run(email.id, email.orderId, email.to, email.subject, email.html, email.at);
+  }
+
+  getIdempotent(key: string): { status: number; body: string } | null {
+    const row = this.db.prepare("SELECT status, body FROM idempotency WHERE key = ?").get(key) as
+      | { status: number; body: string }
+      | undefined;
+    return row ? { status: Number(row.status), body: String(row.body) } : null;
+  }
+
+  putIdempotent(key: string, status: number, body: string): void {
+    this.db
+      .prepare("INSERT OR IGNORE INTO idempotency (key, status, body, at) VALUES (?, ?, ?, ?)")
+      .run(key, status, body, Date.now());
   }
 
   getLatestEmail(orderId: string): StoredEmail | null {

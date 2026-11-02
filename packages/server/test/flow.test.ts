@@ -17,6 +17,7 @@ function setup(extra: { staffKey?: string } = {}) {
     signingKeyPem: generateSigningKeyPem(),
     payments: { test: true },
     exposeEmailPreview: true,
+    allowOpenStaff: true,
     ...extra,
   });
   const call = (path: string, init?: RequestInit) => collect.app.request(`https://shop.test${path}`, init);

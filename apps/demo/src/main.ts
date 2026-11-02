@@ -55,6 +55,8 @@ const collect = createCollect({
   },
   collectWindowMinutes: 120,
   staffKey: env.STAFF_KEY || undefined,
+  // The public demo lets visitors play staff; a real shop sets STAFF_KEY instead.
+  allowOpenStaff: !env.STAFF_KEY,
   exposeEmailPreview: true,
 });
 

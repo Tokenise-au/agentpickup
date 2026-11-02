@@ -18,11 +18,11 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 
 ## Hardening (alongside each item)
 
-- [ ] Limit failed pickup-code and pass lookups per IP, so codes can't be guessed
-- [ ] Open staff routes need an explicit `allowOpenStaff: true`, so a forgotten staff key fails closed
-- [ ] Request body size limits on every JSON endpoint
-- [ ] Idempotency keys on order creation
-- [ ] Security headers on shopper and staff pages
+- [x] Limit failed pickup-code and pass lookups per IP, so codes can't be guessed (12 per 10 minutes, then 429)
+- [x] Open staff routes need an explicit `allowOpenStaff: true`, so a forgotten staff key fails closed
+- [x] Request body size limits on every JSON endpoint (64 KB)
+- [x] Idempotency keys on order creation (`Idempotency-Key`, the stored response is replayed)
+- [x] Security headers on shopper and staff pages (no-store, no-referrer, frame-ancestors none, CSP)
 - [ ] Regression run after every item: unit tests, typecheck, and the demo flow
 
 ## Roadmap to production
