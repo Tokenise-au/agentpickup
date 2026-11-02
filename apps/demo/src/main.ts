@@ -89,7 +89,7 @@ app.post("/api/waitlist", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { email?: string; kind?: string; note?: string };
   const email = String(body.email ?? "").trim().slice(0, 200);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: "That email doesn't look right." }, 400);
-  const kind = ["shop", "platform", "developer", "other"].includes(String(body.kind)) ? String(body.kind) : "other";
+  const kind = ["payments", "shop", "platform", "developer", "other"].includes(String(body.kind)) ? String(body.kind) : "other";
   const note = String(body.note ?? "").trim().slice(0, 1000) || null;
   db.prepare("INSERT INTO waitlist (id, email, kind, note, created_at) VALUES (?, ?, ?, ?, ?)").run(
     newId("wl"),
