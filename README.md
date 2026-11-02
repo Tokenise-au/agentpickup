@@ -53,6 +53,10 @@ const collect = createCollect({
 app.route("/", collect.app); // any Hono app; collect.app.fetch works anywhere
 ```
 
+Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
+them to your public origin before `collect.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
+so the URLs it reports, such as the resource in an x402 quote, match what clients called.
+
 ### Routes it adds
 
 | Route | Who | What |

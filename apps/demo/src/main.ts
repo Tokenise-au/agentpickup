@@ -149,7 +149,23 @@ app.get("/site.js", file("site.js"));
 app.get("/favicon.svg", file("favicon.svg"));
 app.get("/healthz", (c) => c.json({ ok: true }));
 
-serve({ fetch: app.fetch, port }, () => {
+// Behind a TLS proxy (Railway, Fly, a load balancer) requests arrive as http://. Give the app the
+// public origin so URLs it reports, like the resource in an x402 quote, match what clients called.
+const publicOrigin = new URL(baseUrl).origin;
+function withPublicOrigin(req: Request): Request {
+  const url = new URL(req.url);
+  if (url.origin === publicOrigin || !req.headers.get("x-forwarded-proto")) return req;
+  const fixed = new URL(url.pathname + url.search, publicOrigin);
+  const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  return new Request(fixed, {
+    method: req.method,
+    headers: req.headers,
+    body: hasBody ? req.body : undefined,
+    ...(hasBody ? { duplex: "half" } : {}),
+  } as RequestInit);
+}
+
+serve({ fetch: (req) => app.fetch(withPublicOrigin(req)), port }, () => {
   const rails = [env.STRIPE_SECRET_KEY && "card (Stripe)", env.X402_PAY_TO && "x402", "test"].filter(Boolean).join(", ");
   console.log(`agentPickup demo on ${baseUrl}  · payments: ${rails} · mail: ${env.RESEND_API_KEY ? "Resend" : "preview only"}`);
 });
