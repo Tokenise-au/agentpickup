@@ -1,4 +1,5 @@
-export type PaymentRail = "card" | "x402" | "mpp" | "test";
+/** How the order was paid: card checkout, x402, MPP, or through an agent checkout protocol (UCP, ACP). */
+export type PaymentRail = "card" | "x402" | "mpp" | "ucp" | "acp" | "test";
 
 /**
  * awaiting_payment → paid → (ready) → collected

@@ -57,6 +57,12 @@ const collect = createCollect({
         : undefined,
     test: true,
   },
+  // UCP checkout at /ucp/v1: test instruments always, Stripe Shared Payment Tokens when keys are set.
+  ucp: {
+    stripe: env.STRIPE_SECRET_KEY
+      ? { secretKey: env.STRIPE_SECRET_KEY, businessProfile: env.STRIPE_PROFILE_ID, environment: env.STRIPE_SECRET_KEY.includes("_test_") ? "testmode" : "livemode" }
+      : undefined,
+  },
   collectWindowMinutes: 120,
   staffKey: env.STAFF_KEY || undefined,
   // The public demo lets visitors play staff; a real shop sets STAFF_KEY instead.

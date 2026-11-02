@@ -1,6 +1,7 @@
 import type { CaptureMode, CollectEvent, Order } from "@agentpickup/core";
 import type { FacilitatorClient } from "@x402/core/server";
 import type { MppRailConfig } from "./rails/mpp.js";
+import type { SptStripeConfig } from "./rails/spt.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 
@@ -15,6 +16,9 @@ export interface MerchantProfile {
   supportEmail?: string;
   /** Where "Back to shop" links go after checkout. */
   shopUrl?: string;
+  /** Shown to agent platforms (UCP links). */
+  termsUrl?: string;
+  privacyUrl?: string;
   location: { name: string; address?: string; hours?: string };
 }
 
@@ -65,6 +69,8 @@ export interface CollectConfig {
     /** Instant pretend payments for demos and local work. Never enable on a real shop. */
     test?: boolean;
   };
+  /** UCP (Universal Commerce Protocol): checkout sessions with the pickup fulfilment method, at /ucp/v1. */
+  ucp?: { stripe?: SptStripeConfig };
   /** IANA zone for times in emails and pages, e.g. "Australia/Brisbane". */
   timeZone?: string;
   /** Optional footer link in emails. Off by default: shoppers see only the merchant. */

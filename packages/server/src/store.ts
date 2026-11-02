@@ -30,6 +30,9 @@ export interface Store {
   /** Responses already sent for an Idempotency-Key, so a retried request gets the same answer. */
   getIdempotent(key: string): { status: number; body: string } | null;
   putIdempotent(key: string, status: number, body: string): void;
+  /** Protocol sessions (UCP and ACP checkouts) as JSON documents. */
+  getDoc<T>(kind: string, id: string): T | null;
+  putDoc(kind: string, id: string, doc: unknown): void;
 }
 
 const COLUMNS: Record<keyof Order, string> = {
@@ -138,6 +141,13 @@ export class SqliteStore implements Store {
         at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS emails_order ON emails (order_id, at);
+      CREATE TABLE IF NOT EXISTS docs (
+        kind TEXT NOT NULL,
+        id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, id)
+      );
       CREATE TABLE IF NOT EXISTS idempotency (
         key TEXT PRIMARY KEY,
         status INTEGER NOT NULL,
@@ -254,6 +264,19 @@ export class SqliteStore implements Store {
     this.db
       .prepare("INSERT OR IGNORE INTO idempotency (key, status, body, at) VALUES (?, ?, ?, ?)")
       .run(key, status, body, Date.now());
+  }
+
+  getDoc<T>(kind: string, id: string): T | null {
+    const row = this.db.prepare("SELECT body FROM docs WHERE kind = ? AND id = ?").get(kind, id) as { body: string } | undefined;
+    return row ? (JSON.parse(row.body) as T) : null;
+  }
+
+  putDoc(kind: string, id: string, doc: unknown): void {
+    this.db
+      .prepare(
+        "INSERT INTO docs (kind, id, body, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(kind, id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at",
+      )
+      .run(kind, id, JSON.stringify(doc), Date.now());
   }
 
   getLatestEmail(orderId: string): StoredEmail | null {

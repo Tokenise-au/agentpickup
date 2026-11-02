@@ -26,6 +26,9 @@ import { stripeCardRail } from "./rails/stripe.js";
 import { X402_PAY_ROUTE, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
 import { createSiwxGate } from "./siwx.js";
 import { challengeIdOf, createMppRail, MPP_PAY_ROUTE } from "./rails/mpp.js";
+import { sptClient } from "./rails/spt.js";
+import { mountUcp } from "./ucp.js";
+import type { OrderInput, ProtocolCore } from "./protocol.js";
 import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
 import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
@@ -38,12 +41,7 @@ export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type Outgoing
 const UNPAID_TIMEOUT_MS = 60 * 60_000;
 const STAFF_COOKIE = "collect_staff";
 
-export interface OrderInput {
-  items: { id: string; qty: number }[];
-  email?: string;
-  name?: string;
-  rail: PaymentRail;
-}
+export type { OrderInput } from "./protocol.js";
 
 class InputError extends Error {
   constructor(
@@ -79,6 +77,8 @@ export function createCollect(config: CollectConfig) {
   const windowMs = (config.collectWindowMinutes ?? 24 * 60) * 60_000;
   const card = config.payments.card ? stripeCardRail(config.payments.card) : null;
   const x402 = config.payments.x402 ?? null;
+  // Agent checkout protocols charge Stripe Shared Payment Tokens in the merchant's account.
+  const ucpStripe = config.ucp?.stripe ? sptClient(config.ucp.stripe) : null;
   const mpp = config.payments.mpp
     ? createMppRail(config.payments.mpp, { realm: new URL(base).host, currency, merchantName: merchant.name })
     : null;
@@ -155,8 +155,9 @@ export function createCollect(config: CollectConfig) {
     if (rail === "card" && !card) throw new InputError("Card payments aren't set up.");
     if (rail === "x402" && !x402) throw new InputError("Agent payments aren't set up.");
     if (rail === "mpp" && !mpp) throw new InputError("MPP payments aren't set up.");
+    if (rail === "ucp" && !config.ucp) throw new InputError("UCP isn't set up.");
     if (rail === "test" && !config.payments.test) throw new InputError("Test payments are off.");
-    if (!["card", "x402", "mpp", "test"].includes(rail)) throw new InputError("Unknown payment method.");
+    if (!["card", "x402", "mpp", "ucp", "test"].includes(rail)) throw new InputError("Unknown payment method.");
 
     const email = input.email?.trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError("That email doesn't look right.");
@@ -174,7 +175,11 @@ export function createCollect(config: CollectConfig) {
       status: "awaiting_payment",
       rail,
       captureMode:
-        rail === "x402" || rail === "mpp" ? "charge" : rail === "card" ? (config.payments.card?.captureMode ?? "hold") : "hold",
+        rail === "x402" || rail === "mpp" || rail === "ucp" || rail === "acp"
+          ? "charge"
+          : rail === "card"
+            ? (config.payments.card?.captureMode ?? "hold")
+            : "hold",
       items,
       totalCents: items.reduce((sum, i) => sum + i.qty * i.unitCents, 0),
       currency,
@@ -267,6 +272,8 @@ export function createCollect(config: CollectConfig) {
     if (o.rail === "card") return o.captureMode === "hold" ? "Card on hold: taken at handover" : "Paid by card";
     if (o.rail === "x402") return "Paid by agent in USDC";
     if (o.rail === "mpp") return "Paid by agent through Stripe (MPP)";
+    if (o.rail === "ucp") return "Paid through an agent checkout (UCP)";
+    if (o.rail === "acp") return "Paid through an agent checkout (ACP)";
     return "Test payment: no money moves";
   }
 
@@ -305,7 +312,7 @@ export function createCollect(config: CollectConfig) {
     const amount = formatMoney(claimed.totalCents, claimed.currency);
     const message = captured
       ? `${amount} taken from the card hold.`
-      : claimed.rail === "x402" || claimed.rail === "mpp"
+      : claimed.rail === "x402" || claimed.rail === "mpp" || claimed.rail === "ucp" || claimed.rail === "acp"
         ? `${amount} was paid by agent at order time.`
         : claimed.rail === "card"
           ? `${amount} was paid by card at order time.`
@@ -334,6 +341,12 @@ export function createCollect(config: CollectConfig) {
         } else if (o.rail === "x402") {
           refundDue = config.noShowPolicy !== "keep";
           outcome = refundDue ? "refund_due" : "kept";
+        } else if (o.rail === "ucp" && o.paymentRef?.startsWith("pi_") && ucpStripe) {
+          if (config.noShowPolicy === "keep") outcome = "kept";
+          else {
+            await ucpStripe.refunds.create({ payment_intent: o.paymentRef, reason: "requested_by_customer" });
+            outcome = "refunded";
+          }
         } else if (o.rail === "mpp" && mpp && o.paymentRef) {
           if (config.noShowPolicy === "keep") outcome = "kept";
           else {
@@ -375,10 +388,9 @@ export function createCollect(config: CollectConfig) {
   const lookupThrottle = createFailureThrottle({ max: 12, windowMs: 10 * 60_000 });
 
   const app = new Hono();
-  app.use(
-    "/api/*",
-    bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }),
-  );
+  for (const path of ["/api/*", "/ucp/*"]) {
+    app.use(path, bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }));
+  }
   for (const path of ["/p/*", "/c/*", "/staff", "/staff/*", "/orders/*", "/api/staff/*", "/api/orders/:id/pass"]) {
     app.use(path, sensitiveHeaders);
   }
@@ -437,6 +449,7 @@ export function createCollect(config: CollectConfig) {
   app.post("/api/orders", async (c) => {
     const input = (await c.req.json().catch(() => null)) as OrderInput | null;
     if (!input) throw new InputError("Send JSON: { items, email, rail }.");
+    if (input.rail === "ucp" || input.rail === "acp") throw new InputError("Use the UCP or ACP checkout endpoints for that.");
     const order = createOrder(input);
     if (order.rail === "card") {
       const checkout = await card!.createCheckout(order, {
@@ -635,6 +648,23 @@ export function createCollect(config: CollectConfig) {
     }
     return c.json({ received: true });
   });
+
+  const protocolCore: ProtocolCore = {
+    store,
+    merchant,
+    catalog: config.catalog,
+    currency,
+    base,
+    testPayments: Boolean(config.payments.test),
+    createOrder,
+    markPaid,
+    cancelUnpaid: (orderId) => {
+      const cancelled = store.transition(orderId, ["awaiting_payment"], "cancelled");
+      if (cancelled) void emit("order.cancelled", cancelled, { reason: "payment_failed" });
+    },
+    passUrl,
+  };
+  if (config.ucp) mountUcp(app, protocolCore, { stripe: ucpStripe ? { ...config.ucp.stripe, client: ucpStripe } : undefined });
 
   app.get("/p/:passId", async (c) => {
     const order = store.getOrderByPassId(c.req.param("passId"));
