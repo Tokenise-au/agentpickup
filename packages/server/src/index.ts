@@ -28,6 +28,7 @@ import { createSiwxGate } from "./siwx.js";
 import { challengeIdOf, createMppRail, MPP_PAY_ROUTE } from "./rails/mpp.js";
 import { sptClient } from "./rails/spt.js";
 import { mountUcp } from "./ucp.js";
+import { mountAcp } from "./acp.js";
 import type { OrderInput, ProtocolCore } from "./protocol.js";
 import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
@@ -35,6 +36,8 @@ import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
 
 export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
 export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
+export type { AcpConfig } from "./acp.js";
+export type { SptStripeConfig } from "./rails/spt.js";
 export { SqliteStore, type Store, type StoredEmail } from "./store.js";
 export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
 
@@ -79,6 +82,9 @@ export function createCollect(config: CollectConfig) {
   const x402 = config.payments.x402 ?? null;
   // Agent checkout protocols charge Stripe Shared Payment Tokens in the merchant's account.
   const ucpStripe = config.ucp?.stripe ? sptClient(config.ucp.stripe) : null;
+  const acpStripe = config.acp?.stripe ? sptClient(config.acp.stripe) : null;
+  // Protocol modules that want to hear about order events (ACP order webhooks).
+  const eventHooks: ((event: CollectEvent, order: Order) => Promise<void>)[] = [];
   const mpp = config.payments.mpp
     ? createMppRail(config.payments.mpp, { realm: new URL(base).host, currency, merchantName: merchant.name })
     : null;
@@ -110,6 +116,7 @@ export function createCollect(config: CollectConfig) {
     } catch (err) {
       console.error(`[collect] onEvent ${type} failed:`, err);
     }
+    for (const hook of eventHooks) await hook(event, order).catch((err) => console.error(`[collect] ${type} hook failed:`, err));
     if (config.webhook) {
       const body = JSON.stringify({ event, order: publicOrder(order) });
       const ts = Math.floor(Date.now() / 1000);
@@ -156,8 +163,9 @@ export function createCollect(config: CollectConfig) {
     if (rail === "x402" && !x402) throw new InputError("Agent payments aren't set up.");
     if (rail === "mpp" && !mpp) throw new InputError("MPP payments aren't set up.");
     if (rail === "ucp" && !config.ucp) throw new InputError("UCP isn't set up.");
+    if (rail === "acp" && !config.acp) throw new InputError("ACP isn't set up.");
     if (rail === "test" && !config.payments.test) throw new InputError("Test payments are off.");
-    if (!["card", "x402", "mpp", "ucp", "test"].includes(rail)) throw new InputError("Unknown payment method.");
+    if (!["card", "x402", "mpp", "ucp", "acp", "test"].includes(rail)) throw new InputError("Unknown payment method.");
 
     const email = input.email?.trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError("That email doesn't look right.");
@@ -341,12 +349,14 @@ export function createCollect(config: CollectConfig) {
         } else if (o.rail === "x402") {
           refundDue = config.noShowPolicy !== "keep";
           outcome = refundDue ? "refund_due" : "kept";
-        } else if (o.rail === "ucp" && o.paymentRef?.startsWith("pi_") && ucpStripe) {
-          if (config.noShowPolicy === "keep") outcome = "kept";
+        } else if ((o.rail === "ucp" || o.rail === "acp") && o.paymentRef?.startsWith("pi_")) {
+          const client = o.rail === "ucp" ? ucpStripe : acpStripe;
+          if (config.noShowPolicy === "keep" || !client) outcome = config.noShowPolicy === "keep" ? "kept" : "refund_due";
           else {
-            await ucpStripe.refunds.create({ payment_intent: o.paymentRef, reason: "requested_by_customer" });
+            await client.refunds.create({ payment_intent: o.paymentRef, reason: "requested_by_customer" });
             outcome = "refunded";
           }
+          refundDue = outcome === "refund_due";
         } else if (o.rail === "mpp" && mpp && o.paymentRef) {
           if (config.noShowPolicy === "keep") outcome = "kept";
           else {
@@ -388,7 +398,7 @@ export function createCollect(config: CollectConfig) {
   const lookupThrottle = createFailureThrottle({ max: 12, windowMs: 10 * 60_000 });
 
   const app = new Hono();
-  for (const path of ["/api/*", "/ucp/*"]) {
+  for (const path of ["/api/*", "/ucp/*", "/acp/*"]) {
     app.use(path, bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }));
   }
   for (const path of ["/p/*", "/c/*", "/staff", "/staff/*", "/orders/*", "/api/staff/*", "/api/orders/:id/pass"]) {
@@ -665,6 +675,7 @@ export function createCollect(config: CollectConfig) {
     passUrl,
   };
   if (config.ucp) mountUcp(app, protocolCore, { stripe: ucpStripe ? { ...config.ucp.stripe, client: ucpStripe } : undefined });
+  if (config.acp) eventHooks.push(mountAcp(app, protocolCore, config.acp, acpStripe).onEvent);
 
   app.get("/p/:passId", async (c) => {
     const order = store.getOrderByPassId(c.req.param("passId"));

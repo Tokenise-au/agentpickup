@@ -2,6 +2,7 @@ import type { CaptureMode, CollectEvent, Order } from "@agentpickup/core";
 import type { FacilitatorClient } from "@x402/core/server";
 import type { MppRailConfig } from "./rails/mpp.js";
 import type { SptStripeConfig } from "./rails/spt.js";
+import type { AcpConfig } from "./acp.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 
@@ -71,6 +72,8 @@ export interface CollectConfig {
   };
   /** UCP (Universal Commerce Protocol): checkout sessions with the pickup fulfilment method, at /ucp/v1. */
   ucp?: { stripe?: SptStripeConfig };
+  /** ACP (Agentic Commerce Protocol): checkout sessions with the pickup option, at /acp. */
+  acp?: AcpConfig & { stripe?: SptStripeConfig };
   /** IANA zone for times in emails and pages, e.g. "Australia/Brisbane". */
   timeZone?: string;
   /** Optional footer link in emails. Off by default: shoppers see only the merchant. */
