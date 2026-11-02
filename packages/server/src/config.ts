@@ -1,4 +1,5 @@
 import type { CaptureMode, CollectEvent, Order } from "@agentpickup/core";
+import type { FacilitatorClient } from "@x402/core/server";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 
@@ -40,6 +41,8 @@ export interface X402RailConfig {
   /** CAIP-2 network. Base Sepolia (eip155:84532) for testing, Base (eip155:8453) for real money. */
   network?: `${string}:${string}`;
   facilitatorUrl?: string;
+  /** A facilitator client of your own (a self-hosted facilitator, or a fake in tests). Overrides facilitatorUrl. */
+  facilitator?: FacilitatorClient;
 }
 
 export interface CollectConfig {

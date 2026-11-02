@@ -20,7 +20,8 @@ export function x402PayMiddleware(
   priceFor: (orderId: string) => string | null,
 ): MiddlewareHandler {
   const network = config.network ?? "eip155:84532";
-  const facilitator = new HTTPFacilitatorClient({ url: config.facilitatorUrl ?? "https://x402.org/facilitator" });
+  const facilitator =
+    config.facilitator ?? new HTTPFacilitatorClient({ url: config.facilitatorUrl ?? "https://x402.org/facilitator" });
   const server = new x402ResourceServer(facilitator).register(network, new ExactEvmScheme());
   return paymentMiddleware(
     {
