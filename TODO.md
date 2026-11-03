@@ -40,8 +40,9 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Connector contract (`PickupConnector`: menu in, order events out, callback routes) and a live menu kept in the store
 - [x] Connector API at `/connect/v1` for any platform (menu push and revert, open orders, mark ready), Bearer keys
 - [x] Square POS connector: menu sync, paid pickup orders with the payment recorded as external, ready/collected/no-show both ways, refunds recorded, orders closed. Run against a real Square sandbox; `scripts/square-sandbox-check.ts`
-- [ ] Square "ready" webhook against real Square (needs a subscription to a public URL; tested with Square's signing method)
-- [ ] Multi-venue: one install, many venues (menus, branding, payouts, staff keys per venue)
+- [x] Square "ready" webhook against real Square: subscription registered through Square's API for the live Square Sandbox Café venue; staff marking ready in Square emailed the customer ~4 s later (2026-11-03)
+- [x] Multi-venue: `createVenueHost`, venues at `/v/<slug>`, admin API `/host/v1`, secrets sealed with AES-256-GCM, a shop can live under any path
+- [ ] Venue admin dashboard (the admin API exists), custom domains per venue, Stripe Connect payouts per venue
 - [ ] Doshii and Deliverect connectors (need partner API access)
 
 ## Roadmap to production

@@ -15,7 +15,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # 185 tests: every path on SQLite, and again on Postgres (in-process PGlite)
+npm test           # 193 tests: every path on SQLite, and again on Postgres (in-process PGlite)
 npm run typecheck
 ```
 
@@ -124,7 +124,7 @@ order. The key sits in your server config: keep only what refunds need in that w
 A connector plugs agentPickup into the system a venue already runs, so orders from people and agents
 arrive where staff work, the venue's own menu is the menu, and status flows both ways.
 
-**Square POS** (tested against a real Square sandbox, 2026-11-03):
+**Square POS** (run against a real Square sandbox and live webhooks, 2026-11-03):
 
 ```ts
 import { createCollect, squareConnector } from "@agentpickup/server";
@@ -168,6 +168,45 @@ New orders reach the platform as signed webhooks (`webhook: { url, secret }`, se
 connector of your own, implement `PickupConnector`: `fetchCatalog` (the menu), `onEvent` (paid, ready,
 collected, expired, refunded) and `routes` (callbacks under `/connect/<name>/`). Each connector hears events
 in order per order, off the payment path, with retries, so a slow POS never delays a customer's payment.
+
+### Many venues on one install
+
+A platform runs one install for all its venues. Each venue is a full shop at `<baseUrl>/v/<slug>`, with its
+own name, menu, currency, payments, staff key, Square connector and store, and you add or change venues
+through an admin API instead of a deploy.
+
+```ts
+import { createVenueHost, SqliteStore, resendMailer } from "@agentpickup/server";
+
+const host = createVenueHost({
+  baseUrl: "https://orders.yourplatform.com",
+  store: new SqliteStore("./data/venues.db"),              // the venue list
+  storeFor: (slug) => new SqliteStore(`./data/venues/${slug}.db`), // or a PostgresStore with a per-venue prefix
+  mailer: resendMailer({ apiKey: process.env.RESEND_KEY! }),
+  secretKey: process.env.VENUE_SECRET!,   // seals each venue's keys at rest; keep it out of the database
+  adminKeys: [process.env.VENUE_ADMIN_KEY!],
+  shared: { ucp: { /* ... */ }, agentSignatures: { mode: "log" } },
+});
+app.route("/", host.app);
+```
+
+| Route | What |
+|---|---|
+| `PUT /host/v1/venues/:slug` | Create or update a venue: `merchant`, `currency`, `catalog`, `payments` (`test`, `x402`, `card`), `square`, `staffKey`, `webhook` |
+| `GET /host/v1/venues`, `/venues/:slug` | Venues with their links (shop, staff scanner, menu, Square webhook) and which secrets are set, never their values |
+| `DELETE /host/v1/venues/:slug` | Take a venue offline; its orders stay in its store |
+
+Secrets (card and Square keys, the staff key, the refund wallet, webhook secrets, each venue's pass-signing key)
+are sealed with AES-256-GCM before they reach the store. They're write-only: an update that leaves one out keeps
+it, `null` removes it, and no response ever shows one. A venue that can't start, for example after the secret key
+changes, stays offline and says why while the others keep running.
+
+Any shop can also live under a path on its own: give `createCollect` a `baseUrl` such as
+`https://host/v/cafe`. Links, QR codes, the staff scanner, cookies, x402 and `did:web` (`did:web:host:v:cafe`)
+all follow the path.
+
+**Live example:** [agentpickup.app/v/square-sandbox-cafe](https://agentpickup.app/v/square-sandbox-cafe/api/catalog)
+is a venue on the demo's host, connected to a Square sandbox, with its webhook registered in Square.
 
 Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
 them to your public origin before `pickup.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
@@ -238,10 +277,10 @@ See [TODO.md](TODO.md) for what's built and what's next.
   with the failure recorded.
 - x402 is tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its
   refund authorization passes PayAI's verification.
-- Square: everything above has run against a real Square sandbox except the "ready" webhook, which needs a
-  subscription pointing at a public URL; it's tested with Square's own signing method.
-- Not built yet: multi-venue (one install serving many venues), Doshii and Deliverect connectors (they need
-  partner access), Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes, offline
+- Square has run end to end against a real sandbox, including the live "ready" webhook: staff marking an order
+  ready in Square emailed the customer from agentpickup.app about four seconds later.
+- Not built yet: Doshii and Deliverect connectors (they need partner access), a venue admin dashboard (the
+  admin API is there), custom domains per venue, Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes, offline
   scanning, a Shopify connector, UCP request signatures and cart/catalog endpoints, and the AP2
   payment mandate (the PSP's job).
 - On npm: [`@agentpickup/core`](https://www.npmjs.com/package/@agentpickup/core),

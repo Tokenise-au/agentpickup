@@ -28,6 +28,9 @@ const pickup = createCollect({
 // pickup.app is a Hono app: mount it, or call pickup.app.fetch from any runtime with Request/Response.
 ```
 
+`createVenueHost` runs many venues on one install, each at `/v/<slug>` with its own menu, payments, staff key
+and Square connector, managed through an admin API with secrets sealed at rest.
+
 Connectors put orders on the screens staff already use: `squareConnector` for Square POS (menu in, paid
 pickup orders out, ready and collected both ways), and a connector API at `/connect/v1` any other platform
 can integrate against.
