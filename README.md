@@ -182,9 +182,9 @@ See [TODO.md](TODO.md) for what's built and what's next.
 - Card payments: Stripe accepts the library's Checkout Session exactly as it builds it (checked in a Stripe
   sandbox, 2026-11-03), but hold, capture-on-scan and release haven't yet run against real Stripe, only a
   stand-in. MPP and UCP/ACP Shared Payment Token charges are the same.
-- Email: the Resend mailer has run against the real Resend API, which correctly refused an unverified
-  sender, and the order carried on with the failure recorded. A delivered send from a verified domain is
-  still to do.
+- Email: the Resend mailer has delivered real pickup emails (the QR email and the "ready" email) through
+  the Resend API (2026-11-03, Resend's test sender), and when Resend refuses a send the order carries on
+  with the failure recorded.
 - x402 is tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its
   refund authorization passes PayAI's verification.
 - Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
