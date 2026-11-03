@@ -18,7 +18,7 @@ import {
   type OrderItem,
   type PaymentRail,
 } from "@agentpickup/core";
-import type { CollectConfig } from "./config.js";
+import type { CollectConfig, MerchantProfile } from "./config.js";
 import { renderPassEmail } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
 import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
@@ -36,7 +36,7 @@ import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
 import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
 
-export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
+export type { CollectConfig, MerchantConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
 export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
 export type { AcpConfig } from "./acp.js";
 export type { Ap2Config, PlatformProfile } from "./ap2.js";
@@ -77,7 +77,8 @@ export function publicOrder(o: Order) {
 }
 
 export function createCollect(config: CollectConfig) {
-  const { store, merchant } = config;
+  const { store } = config;
+  const merchant: MerchantProfile = { ...config.merchant, location: config.merchant.location ?? { name: config.merchant.name } };
   const key = loadSigningKey(config.signingKeyPem);
   const base = config.baseUrl.replace(/\/$/, "");
   const currency = (config.currency ?? "usd").toLowerCase();

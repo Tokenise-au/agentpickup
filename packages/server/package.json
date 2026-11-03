@@ -1,6 +1,6 @@
 {
   "name": "@agentpickup/server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The pickup layer for agent payments: x402, MPP, UCP (+AP2), ACP and card checkout in; a signed QR pickup pass out; scan to hand over and settle.",
   "type": "module",
   "main": "./dist/index.js",

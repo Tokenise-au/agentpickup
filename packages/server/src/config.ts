@@ -25,6 +25,9 @@ export interface MerchantProfile {
   location: { name: string; address?: string; hours?: string };
 }
 
+/** What a shop passes in. `location` defaults to the shop's own name, for a shop with one counter. */
+export type MerchantConfig = Omit<MerchantProfile, "location"> & { location?: MerchantProfile["location"] };
+
 export interface CatalogItem {
   id: string;
   name: string;
@@ -56,7 +59,7 @@ export interface X402RailConfig {
 export interface CollectConfig {
   /** Public origin the QR links point at, e.g. "https://orders.yourshop.com". */
   baseUrl: string;
-  merchant: MerchantProfile;
+  merchant: MerchantConfig;
   catalog: CatalogItem[];
   /** ISO currency for card payments. x402 prices are in USD (USDC). */
   currency?: string;

@@ -70,6 +70,30 @@ test("buy → email with QR → scan → collected, and only once", async () => 
   assert.equal(second.status, 409);
 });
 
+test("a shop that doesn't name a pickup location collects at the shop itself", async () => {
+  const store = new SqliteStore(":memory:");
+  const collect = createCollect({
+    baseUrl: "https://shop.test",
+    merchant: { name: "Corner Café", fromEmail: "orders@shop.test" },
+    catalog: [{ id: "flat-white", name: "Flat white", priceCents: 450 }],
+    store,
+    mailer: outboxMailer(),
+    signingKeyPem: generateSigningKeyPem(),
+    payments: { test: true },
+  });
+  const res = await collect.app.request("https://shop.test/api/orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: [{ id: "flat-white", qty: 1 }], email: "a@b.co", rail: "test" }),
+  });
+  assert.equal(res.status, 201);
+  const { order } = (await res.json()) as { order: { id: string; status: string } };
+  assert.equal(order.status, "paid");
+  assert.match(store.getLatestEmail(order.id)!.html, /Show this code at Corner Café/);
+  const catalog = (await (await collect.app.request("https://shop.test/api/catalog")).json()) as { merchant: { location: { name: string } } };
+  assert.equal(catalog.merchant.location.name, "Corner Café");
+});
+
 test("the pickup code works when the QR won't scan", async () => {
   const { store, post } = setup();
   const { order } = await placeTestOrder(post);

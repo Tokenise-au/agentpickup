@@ -152,4 +152,6 @@ See [TODO.md](TODO.md) for what's built and what's next.
 - Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
   offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, and the AP2
   payment mandate (the PSP's job).
-- Packages build to `dist` (`npm run build:packages`) and are ready to publish, but aren't on npm yet.
+- Published 0.1.0 on npm: [`@agentpickup/core`](https://www.npmjs.com/package/@agentpickup/core),
+  [`@agentpickup/server`](https://www.npmjs.com/package/@agentpickup/server) and
+  [`@agentpickup/mcp`](https://www.npmjs.com/package/@agentpickup/mcp). `npm run build:packages` builds them.

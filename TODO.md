@@ -29,7 +29,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 
 - [x] Licence: `@agentpickup/core` Apache-2.0, everything else FSL-1.1-ALv2; repo public with topics
 - [x] npm packaging: `dist` builds with types, a `source` export condition for this repo, package READMEs, `npm pack` checked
-- [ ] npm publish of `@agentpickup/core`, `/server`, `/mcp` (Dave: `npm login`, create the `agentpickup` org)
+- [x] npm publish of `@agentpickup/core`, `/server`, `/mcp` 0.1.0 (org `agentpickup`, owner dbh88)
 - [x] Demo agent wallet on Base Sepolia: real x402 payments through the x402.org facilitator, Basescan link, daily cap, café hands test USDC back through the facilitator when the agent runs low
 - [ ] Fund the demo agent with test USDC (Dave: faucet.circle.com, Base Sepolia, `0xd253e213cE143Aa0E1e1cAfc92f7AE82c98aB3bB`)
 - [x] MCP server `@agentpickup/mcp`: five tools, wallet with spend cap and testnet default, stdio CLI, Streamable HTTP handler, hosted at `/mcp` on the demo
@@ -37,7 +37,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 
 ## Roadmap to production
 
-- [ ] Phase 0: npm publish, domain (Dave), privacy page (public repo, npm build and testnet wallets done)
+- [ ] Phase 0: domain (Dave), privacy page (public repo, npm 0.1.0 and testnet wallets done)
 - [ ] Phase 1: Stripe test then live, x402 on Base mainnet, real email, no-show refunds for agent payments, AUD
 - [ ] Phase 2: Postgres store, staff accounts, signing-key rotation, monitoring, backups, docs site
 - [ ] Phase 3: publish the pickup-pass spec and get facilitator review
