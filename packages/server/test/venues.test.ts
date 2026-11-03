@@ -188,3 +188,30 @@ test("venue host: removing a venue takes it offline", async () => {
   assert.equal((await req("/host/v1/venues/pop-up", { headers: ADMIN })).status, 404);
   h.stop();
 });
+
+test("venue host: every venue's order events reach onEvent with the venue's slug", async () => {
+  const seen: string[] = [];
+  const host = createVenueHost({
+    baseUrl: HOST,
+    store: testStore(),
+    storeFor: () => testStore(),
+    mailer: outboxMailer(),
+    secretKey: SECRET,
+    adminKeys: ["admin-key"],
+    onEvent: (slug, event) => {
+      seen.push(`${slug}:${event.type}`);
+    },
+  });
+  await host.app.request(`${HOST}/host/v1/venues/corner`, {
+    method: "PUT",
+    headers: ADMIN,
+    body: JSON.stringify({ merchant: { name: "Corner", fromEmail: "o@host.test" }, catalog: CATALOG, payments: { test: true } }),
+  });
+  await host.app.request(`${HOST}/v/corner/api/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: [{ id: "flat-white", qty: 1 }], email: "robin@example.com", rail: "test" }),
+  });
+  assert.deepEqual(seen, ["corner:order.created", "corner:order.paid", "corner:pass.emailed"]);
+  host.stop();
+});

@@ -22,6 +22,7 @@ import {
 } from "@agentpickup/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { createDemoAgent, DEMO_NETWORKS, TESTNET } from "./demo-agent.js";
+import { createUsage, renderReport, reportData, startReportJob, type ReportSources } from "./report.js";
 
 const env = process.env;
 const port = Number(env.PORT ?? 8402);
@@ -48,6 +49,13 @@ function ap2Key(): string {
 }
 
 const store = new SqliteStore(join(dataDir, "collect.db"));
+
+// The site's own data: the partner form, and the usage behind the 8am report.
+const db = new DatabaseSync(join(dataDir, "site.db"));
+db.exec(`CREATE TABLE IF NOT EXISTS waitlist (
+  id TEXT PRIMARY KEY, email TEXT NOT NULL, kind TEXT NOT NULL, note TEXT, created_at INTEGER NOT NULL
+)`);
+const usage = createUsage(db);
 // Real email through Cloudflare Email Sending (or Resend), from orders@agentpickup.app. It's a public demo, so
 // sends are capped per address and per day; without a key, emails only show on the page.
 const sender = env.MAIL_SENDER || "orders@agentpickup.app";
@@ -125,6 +133,7 @@ const collect = createCollect({
   // The public demo lets visitors play staff; a real shop sets STAFF_KEY instead.
   allowOpenStaff: !env.STAFF_KEY,
   exposeEmailPreview: true,
+  onEvent: (event, order) => usage.order("demo-cafe", event, order),
 });
 
 // A real agent wallet that pays demo orders over x402, so the demo settles on-chain.
@@ -142,12 +151,6 @@ const demoAgent =
       })
     : null;
 
-// ---------- waitlist ----------
-
-const db = new DatabaseSync(join(dataDir, "site.db"));
-db.exec(`CREATE TABLE IF NOT EXISTS waitlist (
-  id TEXT PRIMARY KEY, email TEXT NOT NULL, kind TEXT NOT NULL, note TEXT, created_at INTEGER NOT NULL
-)`);
 
 // ---------- a small per-IP limiter for the public endpoints ----------
 
@@ -175,6 +178,14 @@ app.use("*", async (c, next) => {
     return c.redirect(`${baseUrl}${url.pathname}${url.search}`, 308);
   }
   return next();
+});
+// Count what happened, for the 8am report: pages, the directory, menus, sign-up steps, errors, and MCP calls.
+app.use("*", async (c, next) => {
+  const mcpBody = c.req.method === "POST" && c.req.path === "/mcp" ? c.req.raw.clone().json().catch(() => null) : null;
+  await next();
+  const ua = c.req.header("user-agent");
+  usage.request(c.req.method, c.req.path, c.res.status, ua, c.res.headers.get("location"));
+  if (mcpBody) usage.mcp(await mcpBody, ua);
 });
 app.use("/api/orders", limit(20));
 app.use("/api/waitlist", limit(10));
@@ -287,11 +298,34 @@ const venueHost =
         signup,
         // Australian venues price in AUD; USDC is US dollars.
         toUsdCents: fxToUsdCents(),
+        onEvent: (slug, event, order) => usage.order(slug, event, order),
       })
     : null;
 if (venueHost) app.route("/", venueHost.app);
 // Until sign-up is switched on, "Integrate it" goes to the partner form.
 if (!venueHost || !signup) app.get("/connect", (c) => c.redirect("/#partners"));
+
+// ---------- the 8am report ----------
+// Yesterday's usage, emailed to REPORT_TO at 8am Brisbane time. /admin/report previews it; /admin/report/send sends it now.
+const reportSources: ReportSources = {
+  usage,
+  db,
+  hostAdmin: venueHost
+    ? async (path) => (await venueHost.app.request(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${env.VENUE_ADMIN_KEY}` } })).json()
+    : undefined,
+  demoWallet: demoAgent ? () => demoAgent.status() : undefined,
+};
+const reportJob = startReportJob({ sources: reportSources, mailer: delivering, to: env.REPORT_TO, from: `agentPickup <${env.REPORT_FROM || "reports@agentpickup.app"}>` });
+const isAdmin = (key: string | undefined) => Boolean(env.ADMIN_KEY && key === env.ADMIN_KEY);
+app.get("/admin/report", async (c) => {
+  if (!isAdmin(c.req.query("key"))) return c.json({ error: "Not found." }, 404);
+  return c.html(renderReport(await reportData(reportSources, c.req.query("day") ?? reportJob.yesterday())).html);
+});
+app.post("/admin/report/send", async (c) => {
+  if (!isAdmin(c.req.query("key"))) return c.json({ error: "Not found." }, 404);
+  if (!env.REPORT_TO) return c.json({ error: "Set REPORT_TO first." }, 400);
+  return c.json(await reportJob.sendFor(c.req.query("day") ?? reportJob.yesterday(), env.REPORT_TO));
+});
 
 // The agentPickup MCP server, hosted for the demo shop. The demo agent's wallet pays, under the
 // same daily cap as the button on the page; the same wallet signs in to fetch passes again.

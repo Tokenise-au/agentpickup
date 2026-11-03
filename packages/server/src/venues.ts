@@ -7,7 +7,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
-import { generateSigningKeyPem } from "@agentpickup/core";
+import { generateSigningKeyPem, type CollectEvent, type Order } from "@agentpickup/core";
 import type { CatalogItem, CollectConfig, MerchantConfig } from "./config.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
@@ -114,6 +114,8 @@ export interface VenueHostConfig {
    * venues pricing in USD can take x402.
    */
   toUsdCents?: (cents: number, currency: string) => number | Promise<number>;
+  /** Called for every order event at every venue, with the venue's slug, e.g. for usage reports. */
+  onEvent?: (slug: string, event: CollectEvent, order: Order) => void | Promise<void>;
 }
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -315,6 +317,14 @@ export function createVenueHost(cfg: VenueHostConfig) {
             ]
           : [],
       ...(s.webhook && secrets.webhookSecret ? { webhook: { url: s.webhook.url, secret: secrets.webhookSecret } } : {}),
+      ...(cfg.shared?.onEvent || cfg.onEvent
+        ? {
+            onEvent: async (event: CollectEvent, order: Order) => {
+              await cfg.shared?.onEvent?.(event, order);
+              await cfg.onEvent?.(record.slug, event, order);
+            },
+          }
+        : {}),
     });
   }
 
