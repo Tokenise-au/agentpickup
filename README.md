@@ -99,9 +99,9 @@ out depends on `qrEmail`:
 
 - `"with-receipt"` (default): the receipt carries the QR and pickup code, and a second email says when it's ready.
 - `"when-ready"`: the receipt says the QR will follow, and the QR comes in the "ready" email when staff or the
-  POS mark the order ready. If nobody does within `qrFallbackMinutes` (default 20), the QR goes out anyway, so
-  a busy venue never strands a customer. Meanwhile the pass page says "Being prepared" and still shows the QR.
-  Use it where someone marks orders ready; a venue with its Square webhook set up gets it by default.
+  POS mark the order ready, never before. Until then the receipt's "Track my order" link opens the pass page,
+  which says "Being prepared" and still shows the QR, so a customer isn't stuck if nobody presses ready. Use it
+  where someone marks orders ready; a venue with its Square webhook set up gets it by default.
 
 Every email has a plain-text part, and replies go to the shop's `supportEmail`. Mailers:
 

@@ -26,7 +26,6 @@ export interface VenueInput {
   noShowPolicy?: "release" | "keep";
   /** When the pickup QR is emailed. Default "when-ready" for a venue whose Square webhook is set up, else "with-receipt". */
   qrEmail?: "with-receipt" | "when-ready";
-  qrFallbackMinutes?: number;
   /** Show the venue in the public directory. Default true. */
   listed?: boolean;
   payments?: {
@@ -167,7 +166,6 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
     ...(v.collectWindowMinutes ? { collectWindowMinutes: v.collectWindowMinutes } : {}),
     ...(v.noShowPolicy ? { noShowPolicy: v.noShowPolicy } : {}),
     ...(v.qrEmail ? { qrEmail: v.qrEmail } : {}),
-    ...(v.qrFallbackMinutes ? { qrFallbackMinutes: v.qrFallbackMinutes } : {}),
     ...(v.listed === false ? { listed: false } : {}),
     payments: {
       ...(v.payments?.test ? { test: true } : {}),
@@ -225,7 +223,6 @@ export function createVenueHost(cfg: VenueHostConfig) {
       noShowPolicy: s.noShowPolicy ?? cfg.shared?.noShowPolicy,
       // Square tells us when staff mark an order ready, so the QR can wait for that.
       qrEmail: s.qrEmail ?? (s.square && secrets.squareWebhookKey ? "when-ready" : "with-receipt"),
-      qrFallbackMinutes: s.qrFallbackMinutes,
       store: cfg.storeFor(record.slug),
       mailer: cfg.mailer,
       signingKeyPem: secrets.signingKeyPem,

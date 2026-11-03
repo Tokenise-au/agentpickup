@@ -37,7 +37,7 @@ venue's logo, address, hours and map position in; paid pickup orders out; ready 
 a connector API at `/connect/v1` any other platform can integrate against.
 
 The first email is a receipt. With `qrEmail: "when-ready"` the pickup QR follows when the order is marked
-ready (or after `qrFallbackMinutes`); by default it's in the receipt. Email goes through `cloudflareMailer`
+ready; by default it's in the receipt. Email goes through `cloudflareMailer`
 (Cloudflare Email Sending) or `resendMailer`, with a plain-text part, reply-to the shop, and `cappedMailer`
 for public demos.
 

@@ -121,7 +121,6 @@ export function createCollect(config: CollectConfig) {
   // A connector (Square) can fill in the time zone with the rest of the venue's profile.
   let timeZone = config.timeZone;
   const qrWhenReady = config.qrEmail === "when-ready";
-  const qrFallbackMs = (config.qrFallbackMinutes ?? 20) * 60_000;
   const key = loadSigningKey(config.signingKeyPem);
   const base = config.baseUrl.replace(/\/$/, "");
   // A shop can live at a domain root or under a path (https://host/v/cafe); routes, links and cookies follow it.
@@ -343,7 +342,7 @@ export function createCollect(config: CollectConfig) {
     });
     if (!order) return (await store.getOrder(orderId))!;
     await emit("order.paid", order, { paymentRef: payment.paymentRef, payer: payment.payer ?? undefined, ...payment.meta });
-    // Where staff or the POS mark orders ready, the QR waits for that email (or the fallback in sweep).
+    // Where staff or the POS mark orders ready, the QR waits for that email.
     await sendPassEmail(order, qrWhenReady ? "receipt" : "paid");
     return order;
   }
@@ -475,14 +474,6 @@ export function createCollect(config: CollectConfig) {
         if (expired) await emit("order.expired", expired, { outcome });
       } catch (err) {
         console.error(`[collect] expiring ${o.id} failed:`, err);
-      }
-    }
-    // "when-ready" shops: a paid order nobody marked ready still gets its QR after qrFallbackMinutes.
-    if (qrWhenReady) {
-      for (const o of await store.listOrders({ statuses: ["paid"], limit: 200 })) {
-        if (!o.paidAt || now - o.paidAt < qrFallbackMs || (await store.getDoc("qr-emailed", o.id))) continue;
-        await store.putDoc("qr-emailed", o.id, { at: now });
-        await sendPassEmail(o, "qr");
       }
     }
     // New no-shows, and refunds that failed on an earlier sweep.

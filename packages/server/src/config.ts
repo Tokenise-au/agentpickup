@@ -140,12 +140,10 @@ export interface CollectConfig {
   poweredBy?: { label: string; url: string };
   /**
    * When the customer gets the pickup QR. "with-receipt" (default): in the first email, at payment.
-   * "when-ready": the first email is a receipt, and the QR follows when staff or the POS mark the order
-   * ready. Use it only where someone marks orders ready; qrFallbackMinutes covers a venue that forgets.
+   * "when-ready": the first email is a receipt, and the QR comes only when staff or the POS mark the order
+   * ready. Until then the receipt's "Track my order" link opens the pass, which says "Being prepared".
    */
   qrEmail?: "with-receipt" | "when-ready";
-  /** With qrEmail "when-ready": send the QR anyway this many minutes after payment. Default 20. */
-  qrFallbackMinutes?: number;
   /** Minutes a paid order stays collectable. Default 24 hours. */
   collectWindowMinutes?: number;
   /**

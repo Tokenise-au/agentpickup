@@ -48,7 +48,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 
 - [x] Cloudflare Email Sending: agentpickup.app onboarded (DKIM, bounce MX/SPF, DMARC p=reject), `cloudflareMailer`, live on the demo from orders@agentpickup.app
 - [x] Plain-text part, reply-to the shop, provider message id on `pass.emailed`, `cappedMailer` (demo: 3 per address, 100 a day), venues send from the platform domain under their own name
-- [x] Receipt first (items, how it was paid with the USDC transaction link, order number, tax id); `qrEmail: "when-ready"` sends the QR when the order is marked ready, with a fallback after `qrFallbackMinutes`; default for venues with the Square webhook, and the Demo Café
+- [x] Receipt first (items, how it was paid with the USDC transaction link, order number, tax id); `qrEmail: "when-ready"` sends the QR when the order is marked ready (no timed fallback, by choice: hospitality orders aren't ready on a timer); default for venues with the Square webhook, and the Demo Café
 
 ## Integrate, don't compete (2026-11-03)
 

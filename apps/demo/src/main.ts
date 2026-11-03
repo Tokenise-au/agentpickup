@@ -109,9 +109,8 @@ const collect = createCollect({
   // Agent signatures are checked and reported on agent payment routes, not required, in the demo.
   agentSignatures: { mode: "log" },
   collectWindowMinutes: 120,
-  // A receipt first, the QR when "Mark ready" is pressed (or after 5 minutes if nobody does).
+  // A receipt first, the QR when "Mark ready" is pressed.
   qrEmail: "when-ready",
-  qrFallbackMinutes: 5,
   staffKey: env.STAFF_KEY || undefined,
   // The public demo lets visitors play staff; a real shop sets STAFF_KEY instead.
   allowOpenStaff: !env.STAFF_KEY,

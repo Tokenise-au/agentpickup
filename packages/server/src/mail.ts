@@ -149,10 +149,10 @@ export function outboxMailer(): Mailer {
 }
 
 /**
- * Which email: "paid" is the receipt with the QR in it; "receipt" leaves the QR for a later email
- * ("ready" when staff or the POS mark the order ready, or "qr" if nobody does in time).
+ * Which email: "paid" is the receipt with the QR in it; "receipt" leaves the QR for the "ready" email,
+ * sent when staff or the POS mark the order ready.
  */
-export type PassEmailKind = "paid" | "receipt" | "ready" | "qr";
+export type PassEmailKind = "paid" | "receipt" | "ready";
 
 export interface PassEmailInput {
   order: Order;
@@ -223,11 +223,6 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
       subject: `Ready to collect: ${merchant.name} order`,
       heading: "Your order is ready",
       lead: `Your order is waiting at ${where}. Show this code to collect it.`,
-    },
-    qr: {
-      subject: `Your ${merchant.name} pickup QR`,
-      heading: "Your pickup QR",
-      lead: `Show this code at ${where} to collect your order. If it isn't out yet, it will be shortly.`,
     },
   }[kind];
   const rows = order.items

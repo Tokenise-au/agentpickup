@@ -52,26 +52,20 @@ test("receipt then QR: the first email is a receipt with no QR, and the QR comes
   shop.collect.stop();
 });
 
-test("receipt then QR: if nobody marks the order ready, the QR goes out anyway, once", async () => {
+test("receipt then QR: the QR waits for ready however long it takes, and the pass still has it", async () => {
   const { sent, mailer } = recordingMailer();
-  const shop = setupShop({ mailer, qrEmail: "when-ready", qrFallbackMinutes: 15 });
+  const shop = setupShop({ mailer, qrEmail: "when-ready" });
   const orderId = await testOrder(shop);
+  await shop.store.updateOrder(orderId, { paidAt: Date.now() - 2 * 60 * 60_000 });
   await shop.collect.sweep();
-  assert.equal(sent.length, 1, "too early: just the receipt");
+  assert.equal(sent.length, 1, "just the receipt");
+  const order = (await shop.store.getOrder(orderId))!;
+  const page = await (await shop.call(new URL(shop.collect.passUrl(order)).pathname)).text();
+  assert.match(page, /alt="Pickup QR code"/, "the receipt's Track my order link still gets them their QR");
 
-  await shop.store.updateOrder(orderId, { paidAt: Date.now() - 16 * 60_000 });
-  await shop.collect.sweep();
-  assert.equal(sent.length, 2);
-  assert.equal(sent[1].subject, "Your Test Café pickup QR");
-  assert.match(sent[1].html, /src="cid:pickup-qr"/);
-  await shop.collect.sweep();
-  assert.equal(sent.length, 2, "not sent twice");
-
-  // Marked ready later still says so, with the QR.
   await shop.collect.markReady(orderId);
-  assert.equal(sent[2].subject, "Ready to collect: Test Café order");
   const kinds = (await shop.store.listEvents(orderId)).filter((e) => e.type === "pass.emailed").map((e) => e.data?.kind);
-  assert.deepEqual(kinds, ["receipt", "qr", "ready"]);
+  assert.deepEqual(kinds, ["receipt", "ready"]);
   shop.collect.stop();
 });
 
@@ -87,10 +81,6 @@ test("by default the first email is the receipt with the QR in it", async () => 
   const page = await (await shop.call(new URL(shop.collect.passUrl((await shop.store.getOrder(orderId))!)).pathname)).text();
   assert.doesNotMatch(page, /Being prepared/);
 
-  // Nothing waits on a fallback.
-  await shop.store.updateOrder(orderId, { paidAt: Date.now() - 60 * 60_000 });
-  await shop.collect.sweep();
-  assert.equal(sent.length, 1);
   shop.collect.stop();
 });
 
