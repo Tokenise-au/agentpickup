@@ -88,7 +88,7 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [x] `fxToUsdCents`: ECB rates through Frankfurter, so AUD venues can take USDC
 - [x] Dave: sandbox redirect URL and app keys (2026-11-03); app-level webhook `wbhk_d429…` registered at /connect/square/webhook
 - [x] Checked live on the sandbox: sign-up, agent order through the MCP, order in Square, ready in Square, QR email in ~1 s
-- [ ] Production Square app: redirect URL, keys, `SQUARE_ENVIRONMENT=production`, its own webhook subscription (before Phase 3)
+- [ ] Production Square app: redirect URL, keys, `SQUARE_ENVIRONMENT=production`, its own webhook subscription (before Phase 3). In progress 2026-11-04: Dave, with a one-page guide
 - [ ] Repeat the agent's USDC payment on a wizard venue once a wallet has Base Sepolia test USDC
 - Size: about 4-6 hours, built and tested on the Square sandbox first
 
@@ -123,6 +123,20 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [ ] A production Square app with OAuth (the wizard)
 - [ ] Privacy policy, terms and support pages on agentpickup.app
 - [ ] Apply for a listing; Square reviews apps before they're listed (check the current requirements and timing first)
+
+## Next: get it in front of people (2026-11-04)
+
+The product is ahead of demand, so these come before more features. Order of play:
+
+- [ ] Production Square app, so real cafés can sign up (Dave; see the Phase 1 list above)
+- [ ] Publish core 0.3.0, server 0.8.0, mcp 0.3.0, then the MCP Registry 0.3.0, before any outreach goes out (Dave)
+- [ ] Coinbase Agentic Wallet test: Dave signs in, adds about $2 of USDC on Base, and asks Claude to buy a $0.50 babyccino at the Demo Café (the first end-to-end run with a real person's wallet)
+- [ ] A short demo video: Claude, a Coinbase wallet and agentPickup buying a coffee and collecting it (after the wallet test)
+- [ ] Outreach tracker: add the wallet companies (Coinbase, Safe, Cobo, FluxA, Privy, Turnkey) with drafts (Claude); Dave sends, PayAI, Coinbase and the x402 Foundation first
+- [ ] Two or three Brisbane cafés as reference sites, once the production Square app is live (Dave, with Claude on call)
+- [ ] Directory: no outside site has listed itself yet; ask each outreach target that takes agent payments to register its listing
+- [ ] Later: an office-kitty demo, a team's Safe with an agent allowance ordering pickups (an integration demo, not a product; we don't build or hold wallets)
+- [ ] Later: real logos for Lightspeed, Toast, Clover, Base and PayAI from their brand kits (check each one's partner-logo rules first)
 
 ## Roadmap
 

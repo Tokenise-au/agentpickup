@@ -15,6 +15,8 @@ const DAY = 24 * 3600_000;
 class FakeSquare {
   revoked: string[] = [];
   refreshes = 0;
+  /** host + path of every request, in order. */
+  calls: string[] = [];
   /** merchant -> the access token Square currently accepts. */
   tokens = new Map<string, string>();
   orders = new Map<string, { id: string; version: number; state: string; fulfillments: { uid: string; state: string }[]; total_money: { amount: number; currency: string } }>();
@@ -34,6 +36,7 @@ class FakeSquare {
 
   fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
+    this.calls.push(url.host + url.pathname);
     const method = init?.method ?? "GET";
     const headers = new Headers(init?.headers);
     const body = init?.body ? JSON.parse(String(init.body)) : {};
@@ -113,10 +116,10 @@ function browser(app: { request: (url: string, init?: RequestInit) => Response |
 
 const csrfIn = (html: string) => html.match(/name="csrf" value="([^"]+)"/)![1];
 
-function setup(opts: { converts?: boolean } = {}) {
-  const square = new FakeSquare();
+function setup(opts: { converts?: boolean; environment?: "sandbox" | "production"; store?: ReturnType<typeof testStore>; square?: FakeSquare } = {}) {
+  const square = opts.square ?? new FakeSquare();
   const sent: OutgoingMail[] = [];
-  const store = testStore();
+  const store = opts.store ?? testStore();
   const host = createVenueHost({
     baseUrl: HOST,
     store,
@@ -128,7 +131,7 @@ function setup(opts: { converts?: boolean } = {}) {
     fetch: square.fetch as typeof fetch,
     ...(opts.converts === false ? {} : { toUsdCents: (cents: number) => cents * 0.7 }),
     signup: {
-      square: { applicationId: APP_ID, applicationSecret: APP_SECRET, environment: "sandbox", webhookSignatureKey: HOOK_KEY },
+      square: { applicationId: APP_ID, applicationSecret: APP_SECRET, environment: opts.environment ?? "sandbox", webhookSignatureKey: HOOK_KEY },
       x402: { network: "eip155:84532" },
     },
   });
@@ -267,6 +270,19 @@ test("signup: Square access is renewed once it's a week old, for all of a seller
   // Both venues still reach Square with the renewed token.
   for (const s of [slug, "corner-cafe-2"]) assert.deepEqual(await host.venue(s)!.syncCatalog(), [{ connector: "square", items: 1 }]);
   host.stop();
+});
+
+test("signup: after a switch to a production Square app, sandbox venues aren't renewed with it", async () => {
+  const sandbox = setup();
+  await signUp(browser(sandbox.host.app));
+  sandbox.host.stop();
+  // The same install, restarted with the production app's keys.
+  const prod = setup({ environment: "production", store: sandbox.store, square: sandbox.square });
+  await prod.host.ready;
+  sandbox.square.calls.length = 0;
+  assert.deepEqual(await prod.host.renewSquareTokens(Date.now() + 8 * DAY), []);
+  assert.deepEqual(sandbox.square.calls.filter((c) => c.endsWith("/oauth2/token")), [], "the production app can't renew a sandbox seller's tokens, so it doesn't try");
+  prod.host.stop();
 });
 
 test("seller page: only the seller who connected a venue can change it, and disconnecting the last one ends Square access", async () => {

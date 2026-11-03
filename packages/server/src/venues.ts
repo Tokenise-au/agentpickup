@@ -497,6 +497,8 @@ export function createVenueHost(cfg: VenueHostConfig) {
     for (const slug of await index()) {
       const sq = (await recordOf(slug))?.settings.square;
       if (!sq?.merchantId || sq.revokedAt || !sq.tokenExpiresAt || sq.tokenExpiresAt - now > 23 * DAY) continue;
+      // Venues signed up through the other environment's app (sandbox ones, after a move to production) can't be renewed by this one.
+      if ((sq.environment ?? "sandbox") !== square.environment) continue;
       if (!due.has(sq.merchantId)) due.set(sq.merchantId, slug);
     }
     const renewed: string[] = [];
