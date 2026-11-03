@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy · agentPickup</title>
+<meta name="description" content="What agentPickup collects when you order, pay or get in touch, who handles it, and how to have it removed.">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="agentPickup home"><i></i><span><span class="dim">agent</span>Pickup</span></a>
+    <nav class="links" aria-label="Pages"><a href="/privacy">/privacy</a><a href="/terms">/terms</a><a href="/support">/support</a></nav>
+  </div>
+</header>
+
+<main class="doc">
+  <p class="updated">Last updated 3 November 2026</p>
+  <h1>Privacy</h1>
+  <p>agentPickup is run by Tokenise Pty Ltd (ABN 56 691 028 038), Queensland, Australia. This page covers
+  agentpickup.app: the shops hosted on it, the hosted MCP server at <code>/mcp</code>, the shop directory and
+  the partner form. Businesses that run the agentPickup software on their own servers look after their own
+  customers' information; ask them directly.</p>
+  <p>Questions or requests: <a href="mailto:hello@agentpickup.app">hello@agentpickup.app</a>.</p>
+
+  <h2>What we collect, and why</h2>
+  <table>
+    <thead><tr><th>When</th><th>What</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>You order from a shop here</td><td>Your email, your name if you give one, what you ordered, and when it was paid, made ready and collected</td><td>To send your receipt and pickup QR, so staff know whose order it is, and so the shop can answer questions about it</td></tr>
+      <tr><td>You pay</td><td>The payment reference. For USDC, the paying wallet address and the public transaction. Card details go to Stripe, never to us</td><td>To match the payment to your order and handle refunds</td></tr>
+      <tr><td>You or your AI agent use the MCP server</td><td>What the tools are asked to do: the shop, items and the email to send the QR to</td><td>To place and track the order</td></tr>
+      <tr><td>You fill in the partner form</td><td>Your email, the kind of business and your note</td><td>To reply to you</td></tr>
+      <tr><td>Staff use the scanner page</td><td>A cookie that keeps that device signed in</td><td>So staff don't sign in on every scan</td></tr>
+      <tr><td>You visit the site</td><td>Page counts from Cloudflare Web Analytics on the home page. It sets no cookies and doesn't follow you to other sites. Your IP address is held in memory for a minute to limit abuse</td><td>To see how many people visit, and to keep the service up</td></tr>
+    </tbody>
+  </table>
+  <p>Shop staff see your name, what you ordered and your pickup code. They don't see your email. We don't sell
+  your information or use it for advertising.</p>
+
+  <h2>Who else handles it</h2>
+  <ul>
+    <li><strong>The shop</strong> you ordered from, which is responsible for your order.</li>
+    <li><strong>Square</strong>, when a shop is connected to it: the order with your name, so it shows on the shop's own screens. Not your email.</li>
+    <li><strong>Railway</strong> hosts the site and stores orders.</li>
+    <li><strong>Cloudflare</strong> runs the domain, sends our emails and counts page visits.</li>
+    <li><strong>PayAI</strong> settles USDC payments. It sees the payment, not your email.</li>
+    <li><strong>Stripe</strong> processes card payments for shops that take cards.</li>
+  </ul>
+  <p>Some of these services store information outside Australia, including in the United States.</p>
+  <p>USDC payments are recorded on the Base blockchain, which is public. A blockchain record can't be changed
+  or deleted by us or anyone else.</p>
+
+  <h2>How long we keep it</h2>
+  <p>Orders are kept while the shop runs on agentPickup, so the shop can answer questions and keep its records.
+  Partner form entries are kept until you ask us to remove them. Payment records may need to be kept longer for
+  tax and accounting.</p>
+
+  <h2>Your choices</h2>
+  <p>Email <a href="mailto:hello@agentpickup.app">hello@agentpickup.app</a> to see what we hold about you,
+  correct it, or have your email and name removed from your orders. If you're not happy with how we've handled
+  your information, you can contact the Office of the Australian Information Commissioner at
+  <a href="https://www.oaic.gov.au" target="_blank" rel="noopener">oaic.gov.au</a>.</p>
+
+  <h2>Changes</h2>
+  <p>If this page changes, the date at the top changes with it.</p>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span class="brand small-brand"><i></i><span><span class="dim">agent</span>Pickup <span class="muted">· © 2026 Tokenise Pty Ltd</span></span></span>
+    <nav class="footer-links" aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav>
+  </div>
+</footer>
+</body>
+</html>

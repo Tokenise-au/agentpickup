@@ -27,7 +27,7 @@ where sellers look.
 | What | Who | Size |
 |---|---|---|
 | Publish server 0.6.0 and MCP 0.2.0 to npm, then the MCP Registry entry | Dave | 15 min |
-| Privacy policy, terms and support pages on agentpickup.app | Claude | 2 h |
+| Privacy policy, terms and support pages on agentpickup.app, hello@agentpickup.app forwarding, security.txt | Claude | done 2026-11-03 |
 | Shortlist 3 Brisbane cafés on Square as design partners | Dave | ongoing |
 
 **Done when** the packages on npm match the live site and the legal pages are up.

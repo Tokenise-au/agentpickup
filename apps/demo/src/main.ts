@@ -307,6 +307,22 @@ app.get("/", file("index.html"));
 app.get("/site.css", file("site.css"));
 app.get("/site.js", file("site.js"));
 app.get("/favicon.svg", file("favicon.svg"));
+app.get("/privacy", file("privacy.html"));
+app.get("/terms", file("terms.html"));
+app.get("/support", file("support.html"));
+// RFC 9116: where to report a security problem.
+app.get("/.well-known/security.txt", (c) =>
+  c.text(
+    [
+      "Contact: mailto:hello@agentpickup.app",
+      `Expires: ${new Date(Date.now() + 365 * 24 * 3600_000).toISOString()}`,
+      "Preferred-Languages: en",
+      `Canonical: ${baseUrl}/.well-known/security.txt`,
+      `Policy: ${baseUrl}/support`,
+      "",
+    ].join("\n"),
+  ),
+);
 app.get("/healthz", (c) => c.json({ ok: true }));
 
 // Behind a TLS proxy (Railway, Fly, a load balancer) requests arrive as http://. Give the app the
