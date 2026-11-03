@@ -62,5 +62,8 @@
     "mppx": "^0.17.0",
     "qrcode": "^1.5.4",
     "stripe": "^23.1.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10"
   }
 }

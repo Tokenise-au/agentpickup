@@ -119,7 +119,7 @@ test("a valid mandate completes the order and is kept as evidence", async () => 
   assert.equal(res.status, 200);
   const done = (await res.json()) as Checkout;
   assert.equal(done.status, "completed");
-  const paid = shop.store.listEvents(done.order!.id).find((e) => e.type === "order.paid")!;
+  const paid = (await shop.store.listEvents(done.order!.id)).find((e) => e.type === "order.paid")!;
   assert.equal(paid.data?.ap2CheckoutMandate, mandate);
 });
 
@@ -143,7 +143,7 @@ test("mandates from unknown keys, expired mandates and mis-addressed key binding
   assert.equal(await codeOf(await complete(shop, chk, mandateFor(chk, { signer: strangerKey.privateKey }))), "mandate_invalid_signature");
   assert.equal(await codeOf(await complete(shop, chk, mandateFor(chk, { exp: Math.floor(Date.now() / 1000) - 10 }))), "mandate_expired");
   assert.equal(await codeOf(await complete(shop, chk, mandateFor(chk, { aud: "https://other-shop.test" }))), "mandate_scope_mismatch");
-  assert.equal(shop.store.listOrders({ statuses: ["paid"] }).length, 0);
+  assert.equal((await shop.store.listOrders({ statuses: ["paid"] })).length, 0);
 });
 
 test("platforms without AP2 get unsigned checkouts and complete without a mandate", async () => {

@@ -193,7 +193,7 @@ app.get("/admin/waitlist", (c) => {
 // The demo's "simulate the scan" button: what a staff phone does, minus the camera.
 app.post("/api/demo/scan", async (c) => {
   const { orderId } = (await c.req.json().catch(() => ({}))) as { orderId?: string };
-  const order = orderId ? store.getOrder(orderId) : null;
+  const order = orderId ? await store.getOrder(orderId) : null;
   if (!order?.passId) return c.json({ title: "Not paid yet", detail: "Pay for the order first." }, 409);
   const result = await collect.collect(collect.collectLink(order));
   if (!result.ok) return c.json({ title: result.title, detail: result.detail }, result.status);
@@ -211,7 +211,7 @@ app.get("/api/demo/agent", async (c) => c.json(demoAgent ? await demoAgent.statu
 app.post("/api/demo/agent-pay", async (c) => {
   if (!demoAgent) return c.json({ error: "The demo agent isn't switched on here." }, 404);
   const { orderId } = (await c.req.json().catch(() => ({}))) as { orderId?: string };
-  const order = orderId ? store.getOrder(orderId) : null;
+  const order = orderId ? await store.getOrder(orderId) : null;
   if (!order || order.rail !== "x402") return c.json({ error: "Start an x402 order first." }, 400);
   try {
     const result = await demoAgent.pay(order.id);

@@ -17,9 +17,9 @@ export interface ProtocolCore {
   currency: string;
   base: string;
   testPayments: boolean;
-  createOrder(input: OrderInput): Order;
+  createOrder(input: OrderInput): Promise<Order>;
   markPaid(orderId: string, payment: { paymentRef: string; payer?: string | null; email?: string | null; meta?: Record<string, unknown> }): Promise<Order>;
-  cancelUnpaid(orderId: string): void;
+  cancelUnpaid(orderId: string): Promise<void>;
   passUrl(order: Order): string;
 }
 

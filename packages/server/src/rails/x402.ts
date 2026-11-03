@@ -41,7 +41,7 @@ export function didWebFor(baseUrl: string): string {
  */
 export function x402PayMiddleware(
   config: X402RailConfig,
-  deps: { priceFor: (orderId: string) => string | null; key: SigningKey; baseUrl: string },
+  deps: { priceFor: (orderId: string) => Promise<string | null> | string | null; key: SigningKey; baseUrl: string },
 ): MiddlewareHandler {
   const network = config.network ?? "eip155:84532";
   const facilitator =
@@ -67,9 +67,9 @@ export function x402PayMiddleware(
             network,
             payTo: config.payTo,
             maxTimeoutSeconds: 120,
-            price: (ctx) => {
+            price: async (ctx) => {
               const id = orderIdFromPayPath(ctx.path);
-              const price = id ? deps.priceFor(id) : null;
+              const price = id ? await deps.priceFor(id) : null;
               if (!price) throw new Error("order is not awaiting payment");
               return price;
             },

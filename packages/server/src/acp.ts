@@ -113,10 +113,10 @@ export function mountAcp(app: Hono, core: ProtocolCore, config: AcpConfig, strip
     s.status = problemsFor(s).length ? "not_ready_for_payment" : "ready_for_payment";
   }
 
-  function render(s: Session, extra: MessageError[] = []) {
+  async function render(s: Session, extra: MessageError[] = []) {
     const total = s.lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
     const lineIds = s.lines.map((l) => l.lineId);
-    const order = s.orderId ? core.store.getOrder(s.orderId) : null;
+    const order = s.orderId ? await core.store.getOrder(s.orderId) : null;
     return {
       id: s.id,
       protocol: { version: ACP_VERSION },
@@ -206,7 +206,7 @@ export function mountAcp(app: Hono, core: ProtocolCore, config: AcpConfig, strip
     if (key.length > 255) return fail(c, 400, "invalid", "Idempotency-Key is too long.");
     const scoped = `acp:${platform}:${key}`;
     const fingerprint = sha(`${c.req.path}\n${raw}`);
-    const seen = core.store.getIdempotent(scoped);
+    const seen = await core.store.getIdempotent(scoped);
     if (seen) {
       const stored = JSON.parse(seen.body) as { fingerprint: string; body: string };
       if (stored.fingerprint !== fingerprint) {
@@ -215,17 +215,17 @@ export function mountAcp(app: Hono, core: ProtocolCore, config: AcpConfig, strip
       return c.body(stored.body, seen.status as 200, { "Content-Type": "application/json", "Idempotent-Replayed": "true" });
     }
     const res = await run(platform, raw);
-    if (res.status < 500) core.store.putIdempotent(scoped, res.status, JSON.stringify({ fingerprint, body: await res.clone().text() }));
+    if (res.status < 500) await core.store.putIdempotent(scoped, res.status, JSON.stringify({ fingerprint, body: await res.clone().text() }));
     return res;
   }
 
-  const load = (sessionId: string, platform: string) => {
-    const s = core.store.getDoc<Session>("acp_checkout", sessionId);
+  const load = async (sessionId: string, platform: string) => {
+    const s = await core.store.getDoc<Session>("acp_checkout", sessionId);
     return s && s.platform === platform ? s : null;
   };
-  const save = (s: Session) => {
+  const save = async (s: Session) => {
     s.updatedAt = Date.now();
-    core.store.putDoc("acp_checkout", s.id, s);
+    await core.store.putDoc("acp_checkout", s.id, s);
   };
 
   const parse = (raw: string) => {
@@ -283,49 +283,49 @@ export function mountAcp(app: Hono, core: ProtocolCore, config: AcpConfig, strip
       const s: Session = { id: id("cs"), status: "not_ready_for_payment", platform, lines: [], email: null, name: null, orderId: null, createdAt: now, updatedAt: now };
       const problems = applyBody(s, body);
       settle(s);
-      save(s);
-      return c.json(render(s, problems), 201);
+      await save(s);
+      return c.json(await render(s, problems), 201);
     }),
   );
 
   app.get("/acp/checkout_sessions/:id", (c) =>
     guarded(c, async (platform) => {
-      const s = load(c.req.param("id"), platform);
-      return s ? c.json(render(s)) : fail(c, 404, "not_found", "Checkout session not found.");
+      const s = await load(c.req.param("id"), platform);
+      return s ? c.json(await render(s)) : fail(c, 404, "not_found", "Checkout session not found.");
     }),
   );
 
   app.post("/acp/checkout_sessions/:id", (c) =>
     guarded(c, async (platform, raw) => {
-      const s = load(c.req.param("id"), platform);
+      const s = await load(c.req.param("id"), platform);
       if (!s) return fail(c, 404, "not_found", "Checkout session not found.");
       if (s.status === "completed" || s.status === "canceled") return fail(c, 409, "conflict", `Checkout session is ${s.status}.`);
       const body = parse(raw);
       if (!body) return fail(c, 400, "invalid_json", "Send a JSON checkout session.");
       const problems = applyBody(s, body);
       settle(s);
-      save(s);
-      return c.json(render(s, problems));
+      await save(s);
+      return c.json(await render(s, problems));
     }),
   );
 
   app.post("/acp/checkout_sessions/:id/complete", (c) =>
     guarded(c, async (platform, raw) => {
-      const s = load(c.req.param("id"), platform);
+      const s = await load(c.req.param("id"), platform);
       if (!s) return fail(c, 404, "not_found", "Checkout session not found.");
-      if (s.status === "completed") return c.json(render(s));
+      if (s.status === "completed") return c.json(await render(s));
       if (s.status === "canceled") return fail(c, 409, "conflict", "Checkout session is canceled.");
       const body = parse(raw);
       if (!body) return fail(c, 400, "invalid_json", "Send a JSON body.");
       const problems = applyBody(s, body);
       settle(s);
-      if (s.status !== "ready_for_payment") return c.json(render(s, problems));
+      if (s.status !== "ready_for_payment") return c.json(await render(s, problems));
 
       const payment = body.payment_data as { handler_id?: string; instrument?: { type?: string; credential?: { type?: string; token?: string } } } | undefined;
       const declined = (content: string): MessageError => ({ type: "error", code: "payment_declined", param: "$.payment_data", content_type: "plain", content, resolution: "requires_buyer_input" });
-      if (!payment?.handler_id) return c.json(render(s, [declined("Send payment_data with a handler_id.")]));
+      if (!payment?.handler_id) return c.json(await render(s, [declined("Send payment_data with a handler_id.")]));
 
-      const order = core.createOrder({ items: s.lines.map((l) => ({ id: l.id, qty: l.qty })), email: s.email!, name: s.name ?? undefined, rail: "acp" });
+      const order = await core.createOrder({ items: s.lines.map((l) => ({ id: l.id, qty: l.qty })), email: s.email!, name: s.name ?? undefined, rail: "acp" });
       let paymentRef: string;
       try {
         if (payment.handler_id === SPT_HANDLER_ID && stripe) {
@@ -345,26 +345,26 @@ export function mountAcp(app: Hono, core: ProtocolCore, config: AcpConfig, strip
           throw new Error(`Unsupported payment handler ${payment.handler_id}.`);
         }
       } catch (err) {
-        core.cancelUnpaid(order.id);
-        save(s);
-        return c.json(render(s, [declined(String((err as Error).message))]));
+        await core.cancelUnpaid(order.id);
+        await save(s);
+        return c.json(await render(s, [declined(String((err as Error).message))]));
       }
       await core.markPaid(order.id, { paymentRef, meta: { protocol: "acp", checkoutId: s.id, handler: payment.handler_id } });
       s.status = "completed";
       s.orderId = order.id;
-      save(s);
-      return c.json(render(s));
+      await save(s);
+      return c.json(await render(s));
     }),
   );
 
   app.post("/acp/checkout_sessions/:id/cancel", (c) =>
     guarded(c, async (platform) => {
-      const s = load(c.req.param("id"), platform);
+      const s = await load(c.req.param("id"), platform);
       if (!s) return fail(c, 404, "not_found", "Checkout session not found.");
       if (s.status === "completed") return fail(c, 409, "conflict", "Checkout session is already completed.");
       s.status = "canceled";
-      save(s);
-      return c.json(render(s));
+      await save(s);
+      return c.json(await render(s));
     }),
   );
 
@@ -373,7 +373,7 @@ export function mountAcp(app: Hono, core: ProtocolCore, config: AcpConfig, strip
   /** Forward order lifecycle changes for ACP orders to the platform webhook. */
   async function onEvent(event: CollectEvent, order: Order) {
     if (!config.webhook || order.rail !== "acp") return;
-    const paid = core.store.listEvents(order.id).find((e) => e.type === "order.paid");
+    const paid = (await core.store.listEvents(order.id)).find((e) => e.type === "order.paid");
     const checkoutId = String(paid?.data?.checkoutId ?? "");
     const type = event.type === "order.paid" ? "order_create" : ["order.ready", "order.collected", "order.expired"].includes(event.type) ? "order_update" : null;
     if (!type || !checkoutId) return;

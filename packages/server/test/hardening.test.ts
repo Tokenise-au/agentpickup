@@ -5,7 +5,7 @@ import { setupShop } from "./helpers.js";
 async function testOrder(shop: ReturnType<typeof setupShop>) {
   const res = await shop.post("/api/orders", { items: [{ id: "flat-white", qty: 1 }], email: "a@b.co", rail: "test" });
   const { order } = (await res.json()) as { order: { id: string } };
-  return shop.store.getOrder(order.id)!;
+  return (await shop.store.getOrder(order.id))!;
 }
 
 test("with no staff key and no allowOpenStaff, staff routes are closed", async () => {
@@ -13,7 +13,7 @@ test("with no staff key and no allowOpenStaff, staff routes are closed", async (
   const order = await testOrder(shop);
   assert.equal((await shop.post("/api/staff/collect", { scan: order.pickupCode })).status, 403);
   assert.equal((await shop.call("/staff")).status, 403);
-  assert.equal(shop.store.getOrder(order.id)!.status, "paid");
+  assert.equal((await shop.store.getOrder(order.id))!.status, "paid");
 });
 
 test("guessing pickup codes gets a client locked out, even for a real code", async () => {
@@ -48,7 +48,7 @@ test("an Idempotency-Key makes order creation safe to retry", async () => {
   assert.equal(again.headers.get("Idempotent-Replayed"), "true");
   assert.equal(id(a), id(b));
   assert.notEqual(id(a), id(c));
-  assert.equal(shop.store.listOrders().length, 2);
+  assert.equal((await shop.store.listOrders()).length, 2);
 });
 
 test("pass pages are not cached, framed or leaked through the referrer", async () => {

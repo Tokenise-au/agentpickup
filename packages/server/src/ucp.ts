@@ -169,7 +169,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
     s.status = messagesFor(s).length ? "incomplete" : "ready_for_complete";
   }
 
-  function render(s: Session, problems: Message[] = []) {
+  async function render(s: Session, problems: Message[] = []) {
     const total = s.lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
     const lineIds = s.lines.map((l) => l.lineId);
     const body: Record<string, unknown> = {
@@ -233,7 +233,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
     const messages = [...problems, ...(s.status === "incomplete" ? messagesFor(s) : [])];
     if (messages.length) body.messages = messages;
     if (s.orderId) {
-      const order = core.store.getOrder(s.orderId);
+      const order = await core.store.getOrder(s.orderId);
       if (order) body.order = { id: order.id, label: `Pickup ${order.pickupCode ?? ""}`.trim(), permalink_url: core.passUrl(order) };
     }
     if (s.ap2 && ap2) {
@@ -245,8 +245,8 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
   }
 
   /** The terms a checkout mandate must match: id, totals and line items as we render them now. */
-  const terms = (s: Session) => {
-    const body = render(s);
+  const terms = async (s: Session) => {
+    const body = await render(s);
     return { id: s.id, totals: body.totals, line_items: body.line_items };
   };
 
@@ -265,19 +265,19 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
     const key = c.req.header("Idempotency-Key");
     if (!key) return error(c, 400, "missing_header", "The Idempotency-Key header is required.");
     const scoped = `ucp:${agent}:${c.req.method}:${c.req.path}:${key}`;
-    const seen = core.store.getIdempotent(scoped);
+    const seen = await core.store.getIdempotent(scoped);
     if (seen) return c.body(seen.body, seen.status as 200, { "Content-Type": "application/json" });
     const res = await run(agent);
-    if (res.status < 500) core.store.putIdempotent(scoped, res.status, await res.clone().text());
+    if (res.status < 500) await core.store.putIdempotent(scoped, res.status, await res.clone().text());
     return res;
   }
 
-  const load = (sessionId: string, agent: string) => {
-    const s = core.store.getDoc<Session>("ucp_checkout", sessionId);
+  const load = async (sessionId: string, agent: string) => {
+    const s = await core.store.getDoc<Session>("ucp_checkout", sessionId);
     // Sessions belong to the platform that opened them.
     return s && s.agent === agent ? s : null;
   };
-  const save = (s: Session) => core.store.putDoc("ucp_checkout", s.id, s);
+  const save = async (s: Session) => await core.store.putDoc("ucp_checkout", s.id, s);
 
   type LineInput = { item?: { id?: string }; quantity?: number };
   function applyBody(s: Session, body: Record<string, unknown>): Message[] {
@@ -334,39 +334,39 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
       };
       const problems = applyBody(s, body);
       settle(s);
-      save(s);
-      return c.json(withProblems(s, problems), 201);
+      await save(s);
+      return c.json(await withProblems(s, problems), 201);
     }),
   );
 
   app.get("/ucp/v1/checkout-sessions/:id", (c) =>
     guarded(c, false, async (agent) => {
-      const s = load(c.req.param("id"), agent);
-      return s ? c.json(render(s)) : error(c, 404, "not_found", "Checkout session not found.");
+      const s = await load(c.req.param("id"), agent);
+      return s ? c.json(await render(s)) : error(c, 404, "not_found", "Checkout session not found.");
     }),
   );
 
   app.put("/ucp/v1/checkout-sessions/:id", (c) =>
     guarded(c, true, async (agent) => {
-      const s = load(c.req.param("id"), agent);
+      const s = await load(c.req.param("id"), agent);
       if (!s) return error(c, 404, "not_found", "Checkout session not found.");
       if (s.status === "completed" || s.status === "canceled") return error(c, 409, "invalid_state", `Checkout is ${s.status}.`);
       const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
       if (!body) return error(c, 400, "invalid", "Send a JSON checkout.");
       const problems = applyBody(s, body);
       settle(s);
-      save(s);
-      return c.json(withProblems(s, problems));
+      await save(s);
+      return c.json(await withProblems(s, problems));
     }),
   );
 
   app.post("/ucp/v1/checkout-sessions/:id/complete", (c) =>
     guarded(c, true, async (agent) => {
-      const s = load(c.req.param("id"), agent);
+      const s = await load(c.req.param("id"), agent);
       if (!s) return error(c, 404, "not_found", "Checkout session not found.");
-      if (s.status === "completed") return c.json(render(s));
+      if (s.status === "completed") return c.json(await render(s));
       settle(s);
-      if (s.status !== "ready_for_complete") return c.json(withProblems(s, []), 409);
+      if (s.status !== "ready_for_complete") return c.json(await withProblems(s, []), 409);
       const body = ((await c.req.json().catch(() => null)) ?? {}) as {
         payment?: { instruments?: { id?: string; handler_id?: string; type?: string; selected?: boolean; credential?: { type?: string; token?: string } }[] };
         ap2?: { checkout_mandate?: string };
@@ -380,7 +380,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
         const raw = body.ap2?.checkout_mandate;
         if (!raw) return error(c, 400, "mandate_required", "This checkout needs ap2.checkout_mandate.");
         try {
-          const verified = await ap2.verifyCheckoutMandate(raw, { ucpAgent: agent, audience: core.base, expect: terms(s) });
+          const verified = await ap2.verifyCheckoutMandate(raw, { ucpAgent: agent, audience: core.base, expect: await terms(s) });
           mandate = { raw, checkoutHash: verified.checkoutHash! };
         } catch (err) {
           if (err instanceof Ap2Error) return error(c, 400, err.code, err.message);
@@ -388,7 +388,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
         }
       }
 
-      const order = core.createOrder({ items: s.lines.map((l) => ({ id: l.id, qty: l.qty })), email: s.email!, name: s.name ?? undefined, rail: "ucp" });
+      const order = await core.createOrder({ items: s.lines.map((l) => ({ id: l.id, qty: l.qty })), email: s.email!, name: s.name ?? undefined, rail: "ucp" });
       let paymentRef: string;
       try {
         if (chosen.handler_id === STRIPE_HANDLER_ID && stripe) {
@@ -409,7 +409,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
           throw new Error(`Unsupported payment handler ${chosen.handler_id ?? "(none)"}.`);
         }
       } catch (err) {
-        core.cancelUnpaid(order.id);
+        await core.cancelUnpaid(order.id);
         return error(c, 402, "payment_declined", String((err as Error).message));
       }
       await core.markPaid(order.id, {
@@ -425,26 +425,26 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
       });
       s.status = "completed";
       s.orderId = order.id;
-      save(s);
-      return c.json(render(s));
+      await save(s);
+      return c.json(await render(s));
     }),
   );
 
   app.post("/ucp/v1/checkout-sessions/:id/cancel", (c) =>
     guarded(c, true, async (agent) => {
-      const s = load(c.req.param("id"), agent);
+      const s = await load(c.req.param("id"), agent);
       if (!s) return error(c, 404, "not_found", "Checkout session not found.");
       if (s.status === "completed") return error(c, 409, "invalid_state", "Checkout is already completed.");
       s.status = "canceled";
-      save(s);
-      return c.json(render(s));
+      await save(s);
+      return c.json(await render(s));
     }),
   );
 
   app.get("/ucp/v1/orders/:id", (c) =>
     guarded(c, false, async (agent) => {
-      const order = core.store.getOrder(c.req.param("id"));
-      const paid = order ? core.store.listEvents(order.id).find((e) => e.type === "order.paid") : undefined;
+      const order = await core.store.getOrder(c.req.param("id"));
+      const paid = order ? (await core.store.listEvents(order.id)).find((e) => e.type === "order.paid") : undefined;
       // Only the platform that completed the checkout sees the order (and its pickup pass).
       if (!order || order.rail !== "ucp" || paid?.data?.agent !== agent) return error(c, 404, "not_found", "Order not found.");
       return c.json(renderOrder(order, String(paid.data?.checkoutId ?? "")));

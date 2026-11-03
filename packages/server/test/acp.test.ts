@@ -98,7 +98,7 @@ test("completing with the test handler creates a paid order whose permalink is t
   assert.equal(done.status, "completed");
   assert.match(done.order!.permalink_url, /^https:\/\/shop\.test\/p\//);
   assert.equal(done.order!.status, "confirmed");
-  const order = shop.store.getOrder(done.order!.id)!;
+  const order = (await shop.store.getOrder(done.order!.id))!;
   assert.equal(order.rail, "acp");
   assert.equal(order.status, "paid");
 });
@@ -128,7 +128,7 @@ test("a declined SPT returns a payment_declined message and no order", async () 
   const body = (await res.json()) as Session;
   assert.equal(body.status, "ready_for_payment");
   assert.ok(body.messages.some((m) => m.code === "payment_declined"));
-  assert.equal(shop.store.listOrders({ statuses: ["paid"] }).length, 0);
+  assert.equal((await shop.store.listOrders({ statuses: ["paid"] })).length, 0);
 });
 
 test("another platform can't read a session", async () => {
@@ -152,7 +152,7 @@ test("order events go to the platform webhook, signed", async () => {
     const shop = acpShop({ url: "https://platform.test/hooks", secret: "hook-secret" });
     const s = await readySession(shop);
     const done = (await (await shop.send("POST", `/checkout_sessions/${s.id}/complete`, { payment_data: { handler_id: "agentpickup_test" } })).json()) as Session;
-    const order = shop.store.getOrder(done.order!.id)!;
+    const order = (await shop.store.getOrder(done.order!.id))!;
     await shop.post("/api/staff/collect", { scan: order.pickupCode });
 
     const types = sent.map((w) => (JSON.parse(w.body) as { type: string; data: { status: string } }));

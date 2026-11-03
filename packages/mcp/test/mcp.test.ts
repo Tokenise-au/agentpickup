@@ -49,7 +49,7 @@ test("an agent with a wallet orders, pays, and gets the pass back with Sign-In-W
   assert.match(paid.json.passUrl, /^https:\/\/shop\.test\/p\//);
   assert.match(paid.json.explorer, /^https:\/\/sepolia\.basescan\.org\/tx\/0x/);
   assert.equal(shop.facilitator.settled.length, 1);
-  assert.equal(shop.store.getOrder(orderId)!.payer?.toLowerCase(), privateKeyToAccount(key).address.toLowerCase());
+  assert.equal((await shop.store.getOrder(orderId))!.payer?.toLowerCase(), privateKeyToAccount(key).address.toLowerCase());
 
   const again = await call("pay_order", { order_id: orderId });
   assert.equal(again.isError, true, "a paid order isn't paid twice");

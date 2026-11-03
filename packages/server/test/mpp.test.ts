@@ -73,7 +73,7 @@ test("an agent pays by card over MPP and the money goes through the merchant's S
   const body = (await paid.json()) as { passUrl: string };
   assert.match(body.passUrl, /\/p\//);
 
-  const order = shop.store.getOrder(id)!;
+  const order = (await shop.store.getOrder(id))!;
   assert.equal(order.status, "paid");
   assert.equal(order.paymentRef, "pi_fake_1");
   const [intent] = shop.stripe.intents;
@@ -91,7 +91,7 @@ test("an MPP credential for one order can't pay for another", async () => {
   const credentialA = await agentWallet().createCredential(challengeA);
   const res = await shop.call(b.path, { method: "POST", headers: { Authorization: credentialA } });
   assert.notEqual(res.status, 200);
-  assert.equal(shop.store.getOrder(b.id)!.status, "awaiting_payment");
+  assert.equal((await shop.store.getOrder(b.id))!.status, "awaiting_payment");
   assert.equal(shop.stripe.intents.length, 0);
 });
 
@@ -113,7 +113,7 @@ test("a card that needs extra authentication leaves the order unpaid", async () 
   const credential = await agentWallet().createCredential(await shop.call(path, { method: "POST" }));
   const res = await shop.call(path, { method: "POST", headers: { Authorization: credential } });
   assert.notEqual(res.status, 200);
-  assert.equal(shop.store.getOrder(id)!.status, "awaiting_payment");
+  assert.equal((await shop.store.getOrder(id))!.status, "awaiting_payment");
 });
 
 test("an uncollected MPP order is refunded through Stripe", async () => {
@@ -121,9 +121,9 @@ test("an uncollected MPP order is refunded through Stripe", async () => {
   const { id, path } = await createMppOrder(shop);
   const credential = await agentWallet().createCredential(await shop.call(path, { method: "POST" }));
   await shop.call(path, { method: "POST", headers: { Authorization: credential } });
-  shop.store.updateOrder(id, { collectBy: Date.now() - 1 });
+  await shop.store.updateOrder(id, { collectBy: Date.now() - 1 });
   await shop.collect.sweep();
-  assert.equal(shop.store.getOrder(id)!.status, "expired");
+  assert.equal((await shop.store.getOrder(id))!.status, "expired");
   assert.deepEqual(shop.stripe.refunded, ["pi_fake_1"]);
 });
 

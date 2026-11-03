@@ -18,7 +18,7 @@ test("an agent pays over x402 and the pickup pass is issued", async () => {
   assert.match(body.passUrl, /^https:\/\/shop\.test\/p\//);
   assert.equal(body.emailedTo, "agent-owner@example.com");
 
-  const order = shop.store.getOrder(orderId)!;
+  const order = (await shop.store.getOrder(orderId))!;
   assert.equal(order.status, "paid");
   assert.equal(order.payer?.toLowerCase(), agent.address.toLowerCase());
   assert.match(order.paymentRef!, /^0x[0-9a-f]{64}$/);
@@ -47,7 +47,7 @@ test("a payment for the wrong amount is refused and nothing is issued", async ()
   const payload = await agent.http.createPaymentPayload(required);
   const res = await shop.call(path, { method: "POST", headers: agent.http.encodePaymentSignatureHeader(payload) });
   assert.notEqual(res.status, 200);
-  assert.equal(shop.store.getOrder(order.id)!.status, "awaiting_payment");
+  assert.equal((await shop.store.getOrder(order.id))!.status, "awaiting_payment");
   assert.equal(shop.facilitator.settled.length, 0);
 });
 
@@ -56,7 +56,7 @@ test("a failed settlement leaves the order unpaid", async () => {
   shop.facilitator.failSettle = true;
   const { orderId, paid } = await agentBuys(shop, makeAgent());
   assert.notEqual(paid.status, 200);
-  assert.equal(shop.store.getOrder(orderId)!.status, "awaiting_payment");
+  assert.equal((await shop.store.getOrder(orderId))!.status, "awaiting_payment");
 });
 
 test("the pay link only exists for x402 orders awaiting payment", async () => {
@@ -70,7 +70,7 @@ test("the pay link only exists for x402 orders awaiting payment", async () => {
 test("an agent-paid order is collected with one scan", async () => {
   const shop = setupShop();
   const { orderId } = await agentBuys(shop, makeAgent());
-  const scan = shop.collect.collectLink(shop.store.getOrder(orderId)!);
+  const scan = shop.collect.collectLink((await shop.store.getOrder(orderId))!);
   const res = await shop.post("/api/staff/collect", { scan });
   assert.equal(res.status, 200);
   const body = (await res.json()) as { message: string };

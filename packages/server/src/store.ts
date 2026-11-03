@@ -13,26 +13,29 @@ export interface StoredEmail {
 }
 
 /** Swap this for Postgres, D1 or anything else; the server only uses these calls. */
+/** A store may answer synchronously (SQLite) or with promises (Postgres); callers always await. */
+export type MaybePromise<T> = T | Promise<T>;
+
 export interface Store {
-  insertOrder(order: Order): void;
-  getOrder(id: string): Order | null;
-  getOrderByPassId(passId: string): Order | null;
-  getOrderByPickupCode(code: string): Order | null;
-  updateOrder(id: string, patch: Partial<Order>): Order;
+  insertOrder(order: Order): MaybePromise<void>;
+  getOrder(id: string): MaybePromise<Order | null>;
+  getOrderByPassId(passId: string): MaybePromise<Order | null>;
+  getOrderByPickupCode(code: string): MaybePromise<Order | null>;
+  updateOrder(id: string, patch: Partial<Order>): MaybePromise<Order>;
   /** Atomically move an order between states; returns null if it wasn't in `from`. */
-  transition(id: string, from: OrderStatus[], to: OrderStatus, patch?: Partial<Order>): Order | null;
-  listOrders(opts?: { statuses?: OrderStatus[]; limit?: number }): Order[];
-  listExpirable(now: number): Order[];
-  addEvent(event: CollectEvent): void;
-  listEvents(orderId: string): CollectEvent[];
-  saveEmail(email: StoredEmail): void;
-  getLatestEmail(orderId: string): StoredEmail | null;
+  transition(id: string, from: OrderStatus[], to: OrderStatus, patch?: Partial<Order>): MaybePromise<Order | null>;
+  listOrders(opts?: { statuses?: OrderStatus[]; limit?: number }): MaybePromise<Order[]>;
+  listExpirable(now: number): MaybePromise<Order[]>;
+  addEvent(event: CollectEvent): MaybePromise<void>;
+  listEvents(orderId: string): MaybePromise<CollectEvent[]>;
+  saveEmail(email: StoredEmail): MaybePromise<void>;
+  getLatestEmail(orderId: string): MaybePromise<StoredEmail | null>;
   /** Responses already sent for an Idempotency-Key, so a retried request gets the same answer. */
-  getIdempotent(key: string): { status: number; body: string } | null;
-  putIdempotent(key: string, status: number, body: string): void;
+  getIdempotent(key: string): MaybePromise<{ status: number; body: string } | null>;
+  putIdempotent(key: string, status: number, body: string): MaybePromise<void>;
   /** Protocol sessions (UCP and ACP checkouts) as JSON documents. */
-  getDoc<T>(kind: string, id: string): T | null;
-  putDoc(kind: string, id: string, doc: unknown): void;
+  getDoc<T>(kind: string, id: string): MaybePromise<T | null>;
+  putDoc(kind: string, id: string, doc: unknown): MaybePromise<void>;
 }
 
 const COLUMNS: Record<keyof Order, string> = {
@@ -57,7 +60,7 @@ const COLUMNS: Record<keyof Order, string> = {
   refundDue: "refund_due",
 };
 
-function toRow(order: Partial<Order>): Record<string, string | number | null> {
+export function toRow(order: Partial<Order>): Record<string, string | number | null> {
   const row: Record<string, string | number | null> = {};
   for (const [key, value] of Object.entries(order)) {
     const col = COLUMNS[key as keyof Order];
@@ -69,7 +72,7 @@ function toRow(order: Partial<Order>): Record<string, string | number | null> {
   return row;
 }
 
-function fromRow(row: Record<string, unknown>): Order {
+export function fromRow(row: Record<string, unknown>): Order {
   return {
     id: row.id as string,
     status: row.status as OrderStatus,

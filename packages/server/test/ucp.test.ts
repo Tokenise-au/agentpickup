@@ -125,7 +125,7 @@ test("completing with the test handler creates a paid order whose permalink is t
   const completed = (await done.json()) as Checkout;
   assert.equal(completed.status, "completed");
   assert.match(completed.order!.permalink_url, /^https:\/\/shop\.test\/p\//);
-  const order = shop.store.getOrder(completed.order!.id)!;
+  const order = (await shop.store.getOrder(completed.order!.id))!;
   assert.equal(order.status, "paid");
   assert.equal(order.rail, "ucp");
   assert.equal(order.totalCents, 1400);
@@ -175,7 +175,7 @@ test("a declined token leaves the checkout ready to try again", async () => {
   assert.equal(res.status, 402);
   const again = (await (await shop.send("GET", `/checkout-sessions/${chk.id}`)).json()) as Checkout;
   assert.equal(again.status, "ready_for_complete");
-  assert.equal(shop.store.listOrders({ statuses: ["paid"] }).length, 0);
+  assert.equal((await shop.store.listOrders({ statuses: ["paid"] })).length, 0);
 });
 
 test("another platform can't see a checkout or its order", async () => {
@@ -199,7 +199,7 @@ test("an uncollected UCP card order is refunded", async () => {
       payment: { instruments: [{ id: "i", handler_id: "stripe_payments", type: "card", selected: true, credential: { type: "stripe_payment_token", token: "spt_9" } }] },
     })
   ).json()) as Checkout;
-  shop.store.updateOrder(done.order!.id, { collectBy: Date.now() - 1 });
+  await shop.store.updateOrder(done.order!.id, { collectBy: Date.now() - 1 });
   await shop.collect.sweep();
   assert.deepEqual(shop.stripe.refunded, ["pi_ucp_1"]);
 });

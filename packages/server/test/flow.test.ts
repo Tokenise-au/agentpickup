@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateSigningKeyPem, loadSigningKey, signPass } from "@agentpickup/core";
-import { createCollect, outboxMailer, SqliteStore } from "../src/index.js";
+import { createCollect, outboxMailer } from "../src/index.js";
+import { testStore } from "./helpers.js";
 
 function setup(extra: { staffKey?: string } = {}) {
-  const store = new SqliteStore(":memory:");
+  const store = testStore();
   const collect = createCollect({
     baseUrl: "https://shop.test",
     merchant: { name: "Test Café", fromEmail: "orders@shop.test", location: { name: "Front counter" } },
@@ -46,7 +47,7 @@ test("buy → email with QR → scan → collected, and only once", async () => 
   assert.equal(order.status, "paid");
   assert.equal(order.totalCents, 1400);
 
-  const saved = store.getOrder(order.id)!;
+  const saved = (await store.getOrder(order.id))!;
   assert.ok(saved.passId && saved.pickupCode);
   assert.equal(next.passUrl, `https://shop.test/p/${saved.passId}`);
 
@@ -64,14 +65,14 @@ test("buy → email with QR → scan → collected, and only once", async () => 
 
   const first = await post("/api/staff/collect", { scan });
   assert.equal(first.status, 200);
-  assert.equal(store.getOrder(order.id)!.status, "collected");
+  assert.equal((await store.getOrder(order.id))!.status, "collected");
 
   const second = await post("/api/staff/collect", { scan });
   assert.equal(second.status, 409);
 });
 
 test("a shop that doesn't name a pickup location collects at the shop itself", async () => {
-  const store = new SqliteStore(":memory:");
+  const store = testStore();
   const collect = createCollect({
     baseUrl: "https://shop.test",
     merchant: { name: "Corner Café", fromEmail: "orders@shop.test" },
@@ -89,7 +90,7 @@ test("a shop that doesn't name a pickup location collects at the shop itself", a
   assert.equal(res.status, 201);
   const { order } = (await res.json()) as { order: { id: string; status: string } };
   assert.equal(order.status, "paid");
-  assert.match(store.getLatestEmail(order.id)!.html, /Show this code at Corner Café/);
+  assert.match((await store.getLatestEmail(order.id))!.html, /Show this code at Corner Café/);
   const catalog = (await (await collect.app.request("https://shop.test/api/catalog")).json()) as { merchant: { location: { name: string } } };
   assert.equal(catalog.merchant.location.name, "Corner Café");
 });
@@ -97,7 +98,7 @@ test("a shop that doesn't name a pickup location collects at the shop itself", a
 test("the pickup code works when the QR won't scan", async () => {
   const { store, post } = setup();
   const { order } = await placeTestOrder(post);
-  const code = store.getOrder(order.id)!.pickupCode!;
+  const code = (await store.getOrder(order.id))!.pickupCode!;
   const res = await post("/api/staff/collect", { scan: code.toLowerCase() });
   assert.equal(res.status, 200);
 });
@@ -105,12 +106,12 @@ test("the pickup code works when the QR won't scan", async () => {
 test("a QR signed by someone else is refused", async () => {
   const { store, post } = setup();
   const { order } = await placeTestOrder(post);
-  const saved = store.getOrder(order.id)!;
+  const saved = (await store.getOrder(order.id))!;
   const forger = loadSigningKey(generateSigningKeyPem());
   const forged = signPass({ v: 1, oid: saved.id, pid: saved.passId!, exp: 2_000_000_000 }, forger);
   const res = await post("/api/staff/collect", { scan: `https://shop.test/c/${forged}` });
   assert.equal(res.status, 400);
-  assert.equal(store.getOrder(order.id)!.status, "paid");
+  assert.equal((await store.getOrder(order.id))!.status, "paid");
 });
 
 test("prices come from the catalog, not the request", async () => {
@@ -135,17 +136,17 @@ test("bad orders are rejected with a reason", async () => {
 test("uncollected orders expire", async () => {
   const { store, collect, post } = setup();
   const { order } = await placeTestOrder(post);
-  store.updateOrder(order.id, { collectBy: Date.now() - 1 });
+  await store.updateOrder(order.id, { collectBy: Date.now() - 1 });
   await collect.sweep();
-  assert.equal(store.getOrder(order.id)!.status, "expired");
-  const res = await post("/api/staff/collect", { scan: store.getOrder(order.id)!.pickupCode });
+  assert.equal((await store.getOrder(order.id))!.status, "expired");
+  const res = await post("/api/staff/collect", { scan: (await store.getOrder(order.id))!.pickupCode });
   assert.equal(res.status, 404, "expired orders no longer match a pickup code");
 });
 
 test("staff routes need the staff key when one is set", async () => {
   const { store, post } = setup({ staffKey: "s3cret-key" });
   const { order } = await placeTestOrder(post);
-  const scan = store.getOrder(order.id)!.pickupCode;
+  const scan = (await store.getOrder(order.id))!.pickupCode;
   assert.equal((await post("/api/staff/collect", { scan })).status, 401);
   assert.equal((await post("/api/staff/collect", { scan }, { "x-collect-staff-key": "wrong" })).status, 401);
   assert.equal((await post("/api/staff/collect", { scan }, { "x-collect-staff-key": "s3cret-key" })).status, 200);
@@ -154,7 +155,7 @@ test("staff routes need the staff key when one is set", async () => {
 test("a shopper opening the QR link sees their pass, not the hand-over screen", async () => {
   const { store, collect, call, post } = setup({ staffKey: "s3cret-key" });
   const { order } = await placeTestOrder(post);
-  const link = collect.collectLink(store.getOrder(order.id)!);
+  const link = collect.collectLink((await store.getOrder(order.id))!);
   const res = await call(new URL(link).pathname, { redirect: "manual" });
   assert.equal(res.status, 302);
   assert.match(res.headers.get("location")!, /^\/p\//);

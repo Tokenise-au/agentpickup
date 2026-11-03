@@ -6,7 +6,24 @@ import type { FacilitatorClient } from "@x402/core/server";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { createCollect, outboxMailer, SqliteStore, type CollectConfig } from "../src/index.js";
+import { PGlite } from "@electric-sql/pglite";
+import { createCollect, outboxMailer, PostgresStore, SqliteStore, type CollectConfig, type Store } from "../src/index.js";
+
+/**
+ * SQLite by default. postgres.test.ts runs every test file again on Postgres: one in-process PGlite for the
+ * whole run, and a fresh table prefix per store, which is also how two shops share a real database.
+ */
+let pg: PGlite | null = null;
+let stores = 0;
+export function testStore(): Store {
+  if (process.env.TEST_STORE !== "postgres") return new SqliteStore(":memory:");
+  pg ??= new PGlite();
+  return new PostgresStore(pg, { prefix: `t${++stores}_` });
+}
+export async function closeTestDb() {
+  await pg?.close();
+  pg = null;
+}
 
 export const NETWORK = "eip155:84532" as const;
 export const PAY_TO = "0x1111111111111111111111111111111111111111";
@@ -53,7 +70,7 @@ export const CATALOG = [
 ];
 
 export function setupShop(extra: Partial<CollectConfig> = {}) {
-  const store = new SqliteStore(":memory:");
+  const store = testStore();
   const facilitator = new FakeFacilitator();
   const collect = createCollect({
     baseUrl: "https://shop.test",
