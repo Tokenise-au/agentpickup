@@ -39,7 +39,7 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 
 | Standard | What agentPickup does | Where |
 |---|---|---|
-| **x402** | `exact` payments priced from the order. **Bazaar** discovery metadata, **signed offers and receipts** (JWS, did:web key at `/.well-known/did.json`), **payment-identifier** idempotency, and **Sign-In-With-X** so the paying wallet can fetch its pass again | `POST /api/orders/:id/pay`, `GET /api/orders/:id/pass`, `/openapi.json` |
+| **x402** | `exact` payments priced from the order. **Bazaar** discovery metadata, **signed offers and receipts** (JWS, did:web key at `/.well-known/did.json`), **payment-identifier** idempotency, and **Sign-In-With-X** so the paying wallet can fetch its pass again. Plus a fixed **order-and-pay** address the x402 catalogues list | `POST /api/orders/:id/pay`, `GET`/`POST /api/x402/order`, `GET /api/orders/:id/pass`, `/openapi.json` |
 | **MPP** (Stripe + Tempo) | `WWW-Authenticate: Payment` challenge; card or Link through a Stripe Shared Payment Token, confirmed in the merchant's Stripe, with `Payment-Receipt`. Credentials are bound to one order | `POST /api/orders/:id/mpp` |
 | **UCP** (2026-08-25) | Business profile; REST checkout with the `pickup` method and a `business_location`; `com.stripe.payments` SPT handler; the order `permalink_url` is the pickup pass, with ready and delivered fulfilment events | `/.well-known/ucp`, `/ucp/v1/*` |
 | **AP2** (v0.2, via UCP) | ES256 `merchant_authorization` on every checkout, and a required SD-JWT+KB checkout mandate when the platform supports AP2. The mandate is verified and stored as evidence | UCP complete |
@@ -167,6 +167,26 @@ uncollected x402 orders are paid back to the wallet that paid them, through the 
 gas. A failed refund is tried again on each sweep, and `collect.refundX402(orderId)` runs one by hand. The
 EIP-3009 nonce is derived from the order id, so the USDC contract itself refuses a second refund of the same
 order. The key sits in your server config: keep only what refunds need in that wallet.
+
+### Order and pay in one call
+
+Pay links are per order, so no x402 catalogue can list them. Every shop with x402 on also answers at one
+address that never changes, where an agent orders and pays in a single request:
+
+```bash
+GET  <shop>/api/x402/order?items=flat-white:2,croissant:1&name=Sam
+POST <shop>/api/x402/order   {"items":[{"id":"flat-white","qty":2}],"email":"sam@example.com","name":"Sam"}
+```
+
+- The first call gets a `402` priced from the items (with no items, one of the first menu item, which is what
+  catalogue checks call). Paying it makes the order, marks it paid once the payment settles, and answers
+  `200` with `{ order, passUrl, emailedTo }`. With an email, the QR is emailed too; without one, the agent
+  has the pass.
+- The `402` carries a bazaar declaration for both methods, with the shop's name, where to collect, tags and
+  an example input, so facilitators that catalogue (PayAI does, on verify and settle) list the shop.
+- A replayed payment, or the same `payment-identifier`, gets the order it already made, never a second one.
+- Live: PayAI's discovery lists `https://agentpickup.app/api/x402/order` (Demo Café, USDC on Base) since
+  2026-11-03.
 
 ### Connectors: orders on the screens staff already use
 

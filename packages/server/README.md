@@ -47,7 +47,9 @@ for public demos.
 
 Storage is `SqliteStore` (one file) or `PostgresStore` (any pg-style client: `pg`, Neon, Supabase), or
 your own `Store`. Shops priced in other currencies take x402 through `payments.x402.toUsdCents`, and
-`payments.x402.refunds` pays USDC no-shows back through the facilitator.
+`payments.x402.refunds` pays USDC no-shows back through the facilitator. Agents can also order and pay in
+one call at `<shop>/api/x402/order`, an address that never changes, so x402 catalogues such as PayAI's can
+list the shop.
 
 Node 22.13 or later (uses `node:sqlite`). Full configuration, routes and protocol notes:
 [github.com/dav3trad3r/agentpickup](https://github.com/dav3trad3r/agentpickup).
