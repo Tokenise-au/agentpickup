@@ -61,6 +61,7 @@
 
   // ---------- demo shop ----------
   let catalog = null;
+  let demoAgent = null;
   const cart = new Map();
   let orderId = store.get("demoOrderId");
   let poll = null;
@@ -161,8 +162,38 @@
 const pay = wrapFetchWithPayment(fetch, client); // the agent's wallet
 await pay("${esc(data.next.url)}", { method: "POST" });
 // → 200, and the QR is emailed to ${esc(email)}</pre>
-      <p class="muted small">This page has no wallet, so the demo stops here. Use the instant test payment to see the rest.</p>`;
+      ${
+        demoAgent?.enabled
+          ? `<button class="btn btn-lime" id="agentPay">Have our demo agent pay it</button>
+             <p class="muted small" style="margin-top:8px">A real wallet (<a href="${esc(demoAgent.explorer)}" target="_blank" rel="noopener">${esc(short(demoAgent.address))}</a>${
+               demoAgent.balance ? `, ${esc(demoAgent.balance)} test USDC` : ""
+             }) pays in Base Sepolia test USDC, settled on-chain by the x402.org facilitator.</p>
+             <p id="agentPayResult" class="mono small"></p>`
+          : `<p class="muted small">This page has no wallet, so the demo stops here. Use the instant test payment to see the rest.</p>`
+      }`;
+    const button = $("agentPay");
+    if (button) button.onclick = () => agentPays(data.order.id, button);
   }
+
+  async function agentPays(id, button) {
+    button.disabled = true;
+    button.textContent = "signing and settling…";
+    const out = $("agentPayResult");
+    const { ok, data } = await api("/api/demo/agent-pay", { orderId: id });
+    if (!ok) {
+      button.disabled = false;
+      button.textContent = "Have our demo agent pay it";
+      out.className = "mono small bad";
+      out.textContent = `✕ ${data.error || "that didn't work, try again?"}`;
+      return;
+    }
+    button.remove();
+    out.className = "mono small ok";
+    out.innerHTML = `✓ paid ${esc(data.amount)} USDC · <a href="${esc(data.explorer)}" target="_blank" rel="noopener">tx ${esc(short(data.transaction))}</a> on Base Sepolia`;
+    startFlow(id, { scroll: true });
+  }
+
+  const short = (hex) => (hex && hex.length > 12 ? `${hex.slice(0, 6)}…${hex.slice(-4)}` : hex || "");
 
   // ---------- the event log on the right ----------
 
@@ -277,6 +308,7 @@ await pay("${esc(data.next.url)}", { method: "POST" });
   api("/api/catalog").then(({ ok, data }) => {
     if (!ok) return ($("menu").textContent = "The demo shop is unavailable right now.");
     catalog = data;
+    if (data.payments?.x402) api("/api/demo/agent").then((r) => (demoAgent = r.ok ? r.data : null));
     renderPayButtons();
     renderMenu();
     if (orderId) startFlow(orderId);

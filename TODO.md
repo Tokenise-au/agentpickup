@@ -23,11 +23,21 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Request body size limits on every JSON endpoint (64 KB)
 - [x] Idempotency keys on order creation (`Idempotency-Key`, the stored response is replayed)
 - [x] Security headers on shopper and staff pages (no-store, no-referrer, frame-ancestors none, CSP)
-- [x] Regression run after every item: unit tests, typecheck, and the demo flow (70 tests; UCP, ACP, x402, the demo order and the staff page checked on the running server; desktop and phone layout)
+- [x] Regression run after every item: unit tests, typecheck, and the demo flow (77 tests; UCP, ACP, x402, the demo order and the staff page checked on the running server; desktop and phone layout)
+
+## Exposure (2026-11-03)
+
+- [x] Licence: `@agentpickup/core` Apache-2.0, everything else FSL-1.1-ALv2; repo public with topics
+- [x] npm packaging: `dist` builds with types, a `source` export condition for this repo, package READMEs, `npm pack` checked
+- [ ] npm publish of `@agentpickup/core`, `/server`, `/mcp` (Dave: `npm login`, create the `agentpickup` org)
+- [x] Demo agent wallet on Base Sepolia: real x402 payments through the x402.org facilitator, Basescan link, daily cap, café hands test USDC back through the facilitator when the agent runs low
+- [ ] Fund the demo agent with test USDC (Dave: faucet.circle.com, Base Sepolia, `0xd253e213cE143Aa0E1e1cAfc92f7AE82c98aB3bB`)
+- [x] MCP server `@agentpickup/mcp`: five tools, wallet with spend cap and testnet default, stdio CLI, Streamable HTTP handler, hosted at `/mcp` on the demo
+- [ ] MCP Registry listing (`packages/mcp/server.json`, `io.github.dav3trad3r/agentpickup`) after npm publish
 
 ## Roadmap to production
 
-- [ ] Phase 0: public repo, npm build and publish, real x402 wallet, domain (Dave), privacy page
+- [ ] Phase 0: npm publish, domain (Dave), privacy page (public repo, npm build and testnet wallets done)
 - [ ] Phase 1: Stripe test then live, x402 on Base mainnet, real email, no-show refunds for agent payments, AUD
 - [ ] Phase 2: Postgres store, staff accounts, signing-key rotation, monitoring, backups, docs site
 - [ ] Phase 3: publish the pickup-pass spec and get facilitator review

@@ -171,6 +171,9 @@ input:focus, textarea:focus { outline: 2px solid rgba(181, 242, 61, .55); outlin
 .pay-note { font: 12px var(--mono); color: var(--dim); text-align: center; }
 .error { color: var(--red); font-size: 14px; min-height: 1.3em; margin-top: 10px; }
 .agent-box { margin-top: 6px; border-top: 1px dashed var(--line-2); padding-top: 14px; font-size: 14px; color: var(--text-2); }
+.agent-box .ok { color: var(--lime); }
+.agent-box .bad { color: var(--red); }
+.agent-box a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .agent-box pre { background: var(--bg); border: 1px solid var(--line); color: var(--text-2); border-radius: 10px; padding: 12px; font: 12.5px/1.6 var(--mono); overflow-x: auto; margin: 10px 0; }
 
 .flow-empty { padding: 56px 22px; text-align: center; }

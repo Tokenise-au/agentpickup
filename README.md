@@ -15,7 +15,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # 70 tests: passes, order flow, every protocol, hardening
+npm test           # 77 tests: passes, order flow, every protocol, hardening, the MCP server
 npm run typecheck
 ```
 
@@ -32,6 +32,7 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 | `STAFF_KEY` | Locks the scanner. Without it the demo runs with `allowOpenStaff`. |
 | `ADMIN_KEY` | Read waitlist signups at `/admin/waitlist?key=…`. |
 | `SIGNING_KEY_PEM`, `AP2_SIGNING_KEY_PEM` | Pass signing (Ed25519) and AP2 merchant signatures (ES256). Generated into `data/` if unset. |
+| `DEMO_AGENT_KEY`, `DEMO_CAFE_KEY` | The demo's Base Sepolia wallets. The agent pays demo orders over x402 for real (the button on the page and the hosted `/mcp`); the café is the payTo and hands test USDC back when the agent runs low. Testnet keys only. |
 
 ## Agent payment standards
 
@@ -46,6 +47,19 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 
 Stock x402 clients cap each payment at **$1** (`spendControls.maxAmountPerPayment`). Agents buying
 real goods need that raised.
+
+## MCP server
+
+`@agentpickup/mcp` lets any MCP client order from an agentPickup shop: `get_shop`, `create_pickup_order`,
+`pay_order` (x402 from a wallet you configure, with a spend cap), `order_status` and `get_pickup_pass`
+(Sign-In-With-X). The demo hosts it at `/mcp`, paying with its testnet wallet:
+
+```json
+{ "mcpServers": { "agentpickup": { "type": "http", "url": "https://web-production-3cfc1.up.railway.app/mcp" } } }
+```
+
+Run it locally with `npx -y @agentpickup/mcp` and `AGENTPICKUP_SHOP_URL` / `AGENTPICKUP_WALLET_KEY`. See
+[packages/mcp](packages/mcp/README.md).
 
 ## Use it in your own server
 
@@ -116,7 +130,8 @@ so the URLs it reports, such as the resource in an x402 quote, match what client
 ```
 packages/core     @agentpickup/core    pass signing/verifying, ids, types (no dependencies)
 packages/server   @agentpickup/server  Hono app: orders, payments, protocols, email, scanner, pages
-apps/demo         the product site: landing page, live demo shop, waitlist
+packages/mcp      @agentpickup/mcp     MCP server (stdio and Streamable HTTP) for agents ordering from a shop
+apps/demo         the product site: landing page, live demo shop, demo agent wallet, hosted /mcp, waitlist
 ```
 
 The repo folder is still called `collect402`; the product and packages are agentPickup.
@@ -135,5 +150,6 @@ See [TODO.md](TODO.md) for what's built and what's next.
 - Stripe, MPP, UCP/ACP SPT payments and Resend are tested against fakes, not real test keys. x402 is
   tested end to end with a fake facilitator and verified live up to the 402 challenge.
 - Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
-  offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, the AP2
-  payment mandate (the PSP's job), and an npm build (packages currently export TypeScript source).
+  offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, and the AP2
+  payment mandate (the PSP's job).
+- Packages build to `dist` (`npm run build:packages`) and are ready to publish, but aren't on npm yet.

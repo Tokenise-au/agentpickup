@@ -2,12 +2,16 @@
 // and the waitlist. Everything a real shop would configure lives in `createCollect`.
 import { serve } from "@hono/node-server";
 import { Hono, type MiddlewareHandler } from "hono";
+import { cors } from "hono/cors";
 import { DatabaseSync } from "node:sqlite";
 import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateSigningKeyPem, newId } from "@agentpickup/core";
+import { createMcpHandler, walletPayer } from "@agentpickup/mcp";
 import { createCollect, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
+import { privateKeyToAccount } from "viem/accounts";
+import { createDemoAgent, DEMO_NETWORK } from "./demo-agent.js";
 
 const env = process.env;
 const port = Number(env.PORT ?? 8402);
@@ -35,6 +39,12 @@ function ap2Key(): string {
 
 const store = new SqliteStore(join(dataDir, "collect.db"));
 
+// The demo's testnet wallets (Base Sepolia). With DEMO_CAFE_KEY set, the café's own address is the payTo.
+const demoAgentKey = env.DEMO_AGENT_KEY as `0x${string}` | undefined;
+const demoCafeKey = env.DEMO_CAFE_KEY as `0x${string}` | undefined;
+const x402PayTo = demoCafeKey ? privateKeyToAccount(demoCafeKey).address : env.X402_PAY_TO;
+const x402Network = (env.X402_NETWORK as `${string}:${string}`) || DEMO_NETWORK;
+
 const collect = createCollect({
   baseUrl,
   merchant: {
@@ -60,9 +70,7 @@ const collect = createCollect({
     card: env.STRIPE_SECRET_KEY
       ? { secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET, captureMode: "hold" }
       : undefined,
-    x402: env.X402_PAY_TO
-      ? { payTo: env.X402_PAY_TO, network: (env.X402_NETWORK as `${string}:${string}`) ?? "eip155:84532" }
-      : undefined,
+    x402: x402PayTo ? { payTo: x402PayTo, network: x402Network } : undefined,
     mpp:
       env.STRIPE_SECRET_KEY && env.MPP_NETWORK_ID && env.MPP_CHALLENGE_SECRET
         ? { stripeSecretKey: env.STRIPE_SECRET_KEY, networkId: env.MPP_NETWORK_ID, challengeSecret: env.MPP_CHALLENGE_SECRET }
@@ -90,6 +98,18 @@ const collect = createCollect({
   exposeEmailPreview: true,
 });
 
+// A real agent wallet that pays demo orders over x402 on Base Sepolia, so the demo settles on-chain.
+const demoAgent =
+  demoAgentKey && x402PayTo && x402Network === DEMO_NETWORK
+    ? createDemoAgent({
+        agentKey: demoAgentKey,
+        cafeKey: demoCafeKey,
+        baseUrl,
+        fetch: (req) => collect.app.fetch(req),
+        dailyLimit: Number(env.DEMO_AGENT_DAILY_LIMIT) || undefined,
+      })
+    : null;
+
 // ---------- waitlist ----------
 
 const db = new DatabaseSync(join(dataDir, "site.db"));
@@ -116,6 +136,17 @@ const app = new Hono();
 app.use("/api/orders", limit(20));
 app.use("/api/waitlist", limit(10));
 app.use("/api/demo/*", limit(30));
+app.use("/api/demo/agent-pay", limit(4));
+app.use("/mcp", limit(60));
+app.use(
+  "/mcp",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Accept", "Mcp-Session-Id", "Mcp-Protocol-Version", "Last-Event-ID"],
+    exposeHeaders: ["Mcp-Session-Id"],
+  }),
+);
 
 app.post("/api/waitlist", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { email?: string; kind?: string; note?: string };
@@ -153,6 +184,40 @@ app.post("/api/demo/ready", async (c) => {
   const order = await collect.markReady(String(orderId ?? ""));
   return c.json({ status: order.status });
 });
+
+app.get("/api/demo/agent", async (c) => c.json(demoAgent ? await demoAgent.status() : { enabled: false }));
+
+app.post("/api/demo/agent-pay", async (c) => {
+  if (!demoAgent) return c.json({ error: "The demo agent isn't switched on here." }, 404);
+  const { orderId } = (await c.req.json().catch(() => ({}))) as { orderId?: string };
+  const order = orderId ? store.getOrder(orderId) : null;
+  if (!order || order.rail !== "x402") return c.json({ error: "Start an x402 order first." }, 400);
+  try {
+    const result = await demoAgent.pay(order.id);
+    return result.ok ? c.json(result) : c.json({ error: result.error }, result.status);
+  } catch (err) {
+    console.warn("demo agent payment failed:", err instanceof Error ? err.message : err);
+    return c.json({ error: "The demo agent couldn't pay just now. Try again in a minute." }, 502);
+  }
+});
+
+// The agentPickup MCP server, hosted for the demo shop. The demo agent's testnet wallet pays, under the
+// same daily cap as the button on the page; the same wallet signs in to fetch passes again.
+const mcp = createMcpHandler({
+  shopUrl: baseUrl,
+  fetch: (req) => collect.app.fetch(req),
+  payer:
+    demoAgent && demoAgentKey
+      ? {
+          ...walletPayer({ privateKey: demoAgentKey, networks: [DEMO_NETWORK] }),
+          pay: async (order) => {
+            const paid = await demoAgent.pay(order.id);
+            return paid.ok ? { ...paid, network: DEMO_NETWORK } : { ok: false, error: paid.error };
+          },
+        }
+      : undefined,
+});
+app.all("/mcp", (c) => mcp(c.req.raw));
 
 app.route("/", collect.app);
 
@@ -198,6 +263,8 @@ function withPublicOrigin(req: Request): Request {
 }
 
 serve({ fetch: (req) => app.fetch(withPublicOrigin(req)), port }, () => {
-  const rails = [env.STRIPE_SECRET_KEY && "card (Stripe)", env.X402_PAY_TO && "x402", "test"].filter(Boolean).join(", ");
+  const rails = [env.STRIPE_SECRET_KEY && "card (Stripe)", x402PayTo && "x402", "test"].filter(Boolean).join(", ");
   console.log(`agentPickup demo on ${baseUrl}  · payments: ${rails} · mail: ${env.RESEND_API_KEY ? "Resend" : "preview only"}`);
+  if (demoAgent) console.log(`demo agent ${demoAgent.address} pays ${demoAgent.cafeAddress ?? x402PayTo} on ${DEMO_NETWORK}`);
+  void demoAgent?.refill();
 });
