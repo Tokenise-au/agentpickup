@@ -346,7 +346,7 @@ const host = createVenueHost({
 });
 ```
 
-1. **Pick your system.** Sign in with Square, or leave an email for another system (listed at `GET /host/v1/requests`).
+1. **Integrate.** Sign in with Square, or pick another system and leave an email (listed at `GET /host/v1/requests`).
 2. **Sign in with Square** (OAuth). The seller approves access to their profile, menu, orders and payments. The
    tokens are sealed with the venue's other secrets and renewed once they're a week old, as Square asks.
 3. **Choose the location.** The venue is created from it, with the menu, logo, address and hours from Square, a
@@ -357,6 +357,10 @@ const host = createVenueHost({
 
 Sellers come back to `/seller` with Sign in with Square to change the brand colour, wallet, test mode and
 directory listing, make a new staff key, or disconnect (the last venue revokes Square access too).
+
+The pages have a plain light and dark look of their own. To match your site, set `signup.pageHead` to the
+fonts and stylesheet to add to every page's `<head>`; pages carry `body.ap-signup` to scope your rules (the
+demo's `apps/demo/public/connect.css` is an example).
 
 In the Square Developer Console, set the OAuth redirect URL to `<baseUrl>/connect/square/callback`, and
 subscribe one webhook at `<baseUrl>/connect/square/webhook` to `order.fulfillment.updated` and

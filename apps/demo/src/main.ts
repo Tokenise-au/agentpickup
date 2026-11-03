@@ -279,6 +279,11 @@ const signup: SignupConfig | undefined =
           webhookSignatureKey: env.SQUARE_APP_WEBHOOK_KEY || undefined,
         },
         x402: { network: signupNetwork, facilitatorUrl: signupNetwork === x402Network ? x402Facilitator : DEMO_NETWORKS[TESTNET].facilitator },
+        // The signup pages in the site's own look.
+        pageHead:
+          '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+          '<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">' +
+          '<link rel="stylesheet" href="/connect.css">',
       }
     : undefined;
 
@@ -305,7 +310,7 @@ const venueHost =
       })
     : null;
 if (venueHost) app.route("/", venueHost.app);
-// Until sign-up is switched on, "Integrate it" goes to the partner form.
+// Until sign-up is switched on, "Integrate" goes to the partner form.
 if (!venueHost || !signup) app.get("/connect", (c) => c.redirect("/#partners"));
 
 // ---------- the 8am report ----------
@@ -385,6 +390,7 @@ function file(name: string) {
 }
 app.get("/", file("index.html"));
 app.get("/site.css", file("site.css"));
+app.get("/connect.css", file("connect.css"));
 app.get("/site.js", file("site.js"));
 app.get("/favicon.svg", file("favicon.svg"));
 app.get("/privacy", file("privacy.html"));

@@ -46,7 +46,7 @@ section { scroll-margin-top: 64px; }
 /* Condensed uppercase display type: the headline voice of the home page. */
 .display { font-family: var(--head); font-stretch: 62%; font-weight: 800; text-transform: uppercase; letter-spacing: -.005em; line-height: .88; }
 .display em { font-style: normal; color: var(--lime); }
-.display.lc, .lc { text-transform: none; }
+.display.lc, .lc, .marquee-track .lc { text-transform: none; }
 
 /* ---------- nav ---------- */
 .nav { position: sticky; top: 0; z-index: 20; background: rgba(10, 11, 13, .82); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
@@ -109,10 +109,6 @@ section { scroll-margin-top: 64px; }
   padding-bottom: 0;
   background: radial-gradient(rgba(255, 255, 255, .075) 1px, transparent 1.3px) 0 0 / 22px 22px;
 }
-.meta-row { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
-.meta-row span { display: inline-flex; align-items: center; gap: 8px; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); }
-@media (max-width: 760px) { .meta-row span:last-child { display: none; } }
 
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr); gap: clamp(28px, 4vw, 56px); align-items: center; padding: clamp(40px, 6vw, 80px) 0 clamp(40px, 5vw, 64px); }
 /* "Agents can pay." is about 6.1em wide at this width: keep it on one line in its column. */
@@ -164,7 +160,9 @@ section { scroll-margin-top: 64px; }
 /* ---------- marquee ---------- */
 .marquee { overflow: hidden; background: var(--lime); color: var(--lime-ink); }
 .marquee-track { display: flex; align-items: center; gap: 26px; width: max-content; padding: 12px 0 10px; animation: marquee 42s linear infinite; }
-.marquee-track span { font: 800 clamp(30px, 3.6vw, 46px)/1 var(--head); font-stretch: 62%; text-transform: uppercase; white-space: nowrap; }
+.marquee-track span { display: inline-flex; align-items: center; gap: .3em; font: 800 clamp(30px, 3.6vw, 46px)/1 var(--head); font-stretch: 62%; text-transform: uppercase; white-space: nowrap; }
+.mq-logo { height: .78em; width: auto; flex: 0 0 auto; }
+.mq-logo.wide { height: .7em; }
 .marquee-track i { font-style: normal; font-size: 22px; line-height: 1; }
 @keyframes marquee { to { transform: translateX(calc(-50% - 13px)); } }
 @media (prefers-reduced-motion: reduce) { .marquee-track { animation: none; } }
@@ -232,7 +230,9 @@ section { scroll-margin-top: 64px; }
 .cell p a { color: var(--lime); text-underline-offset: 3px; }
 .cell-connect { grid-column: span 2; grid-row: span 2; background: var(--panel); padding: clamp(24px, 3vw, 36px); }
 .cell-connect h3 { font-size: clamp(34px, 3.8vw, 52px); font-stretch: 62%; font-weight: 800; text-transform: uppercase; line-height: .92; letter-spacing: 0; margin-top: 6px; }
-.cell-connect .chip { align-self: flex-start; }
+.sq-mark { align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; font: 12px var(--mono); color: var(--lime); text-transform: uppercase; letter-spacing: .08em; }
+.sq-logo { width: 36px; height: 36px; padding: 7px; border-radius: 8px; background: var(--lime); color: var(--lime-ink); }
+.cell-connect .next { font-size: 12px; color: var(--muted); margin-top: -2px; }
 .cell-connect .btn { align-self: flex-start; margin-top: auto; }
 .wizard { list-style: none; margin: 10px 0 18px; padding: 0; display: grid; gap: 0; font-size: 13.5px; color: var(--text-2); }
 .wizard li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line-2); }
@@ -382,20 +382,21 @@ input:focus, textarea:focus { outline: 2px solid rgba(181, 242, 61, .55); outlin
 
 /* ---------- start here: one big row per audience ---------- */
 .rows { border-top: 1px solid var(--line); }
-.row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 40px; gap: 28px; align-items: center; padding: 26px 0; border-bottom: 1px solid var(--line); text-decoration: none; transition: padding .25s ease; }
-.row > b { font-size: clamp(44px, 6.6vw, 92px); transition: color .2s ease; }
+.row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 40px; gap: 28px; align-items: center; padding: 26px 0; border-bottom: 1px solid var(--line); text-decoration: none; }
+/* Hover moves the heading with a transform, never padding: padding narrows the column, the heading rewraps and the row jumps under the mouse. */
+.row > b { font-size: clamp(44px, 6.6vw, 92px); transition: color .2s ease, transform .25s ease; }
 .row > span { color: var(--text-2); font-size: 16px; }
 .row > i { font-style: normal; font-size: 30px; color: var(--muted); justify-self: end; transition: color .2s ease, transform .2s ease; }
-.row:hover { padding-left: 14px; }
+.row:hover > b { transform: translateX(14px); }
+.row:hover > i { transform: translateX(-6px); }
 .row:hover > b, .row:hover > i { color: var(--lime); }
 .row:focus-visible { outline: 2px solid var(--lime); outline-offset: 4px; }
 @media (max-width: 760px) {
   .row { grid-template-columns: minmax(0, 1fr) 30px; row-gap: 8px; padding: 20px 0; }
   .row > span { grid-column: 1; grid-row: 2; }
   .row > i { grid-row: 1; grid-column: 2; font-size: 24px; }
-  .row:hover { padding-left: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .row, .row:hover { transition: none; padding-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .row > b, .row > i { transition: color .2s ease; } .row:hover > b, .row:hover > i { transform: none; } }
 
 /* ---------- pricing: one statement ---------- */
 .price-line { font-size: clamp(66px, 13.4vw, 190px); line-height: .84; margin: 22px 0 36px; }
@@ -430,8 +431,8 @@ pre code { background: none; border: 0; padding: 0; border-radius: 0; font: inhe
 .small-brand .muted { font: 13px var(--mono); }
 .home .footer { padding-top: 8px; }
 /* "agentPickup" is about 4.2em wide here: fill the column without overflowing it. */
-.wordmark { font-size: min(21.4vw, 270px); line-height: .8; text-transform: none; letter-spacing: -.01em; margin: 0 0 28px; white-space: nowrap; overflow: hidden; }
-.wordmark span { color: var(--line-2); }
+.wordmark { font-size: min(20.8vw, 262px); line-height: 1; text-transform: none; letter-spacing: -.01em; margin: 20px 0 22px; white-space: nowrap; }
+.wordmark span { color: #343a42; }
 
 /* Privacy, terms and support: one readable column. */
 .doc { max-width: 760px; margin: 0 auto; padding: 56px 20px 80px; }

@@ -7,6 +7,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { isAddress } from "viem";
 import type { SquareLocationSummary, SquareOAuth, SquareOAuthConfig, SquareTokens } from "./connectors/square-oauth.js";
 import { esc } from "./format.js";
+import { logoSvg } from "./logos.js";
 import type { Store } from "./store.js";
 import type { VenueInput } from "./venues.js";
 
@@ -24,6 +25,11 @@ export interface SignupConfig {
   x402?: { network?: `${string}:${string}`; facilitatorUrl?: string };
   /** Shown on the signup pages. Default "agentPickup". */
   platformName?: string;
+  /**
+   * Extra HTML for the <head> of every signup page, after the built-in styles: your fonts and a stylesheet, so
+   * the pages look like the rest of your site. Pages have `body.ap-signup`; the built-in look stays underneath.
+   */
+  pageHead?: string;
 }
 
 /** One of a seller's venues, as the seller page shows it. */
@@ -129,7 +135,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     return (await deps.venuesOwnedBy(s.m)).find((v) => v.slug === slug) ?? null;
   }
 
-  const page = (title: string, body: string, step?: number) => pageHtml({ platform, title, body, step });
+  const page = (title: string, body: string, step?: number) => pageHtml({ platform, title, body, step, head: config.pageHead });
   const formLimit = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.text("Too much data.", 413) });
   app.use("/connect/*", formLimit);
   app.use("/seller/*", formLimit);
@@ -138,20 +144,22 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
   app.get("/connect", (c) =>
     c.html(
       page(
-        "Take orders from AI agents",
-        `<p class="lede">Connect the POS you already use. Orders that people's AI assistants place and pay for arrive on
-        your Square screens like any pickup order, and staff scan the customer's QR to hand over.</p>
-        <section class="card">
-          <h2>Square</h2>
+        "Integrate your POS",
+        `<p class="lede">Keep the POS you already use. Orders that people's AI assistants place and pay for arrive on
+        your screens like any pickup order, and staff scan the customer's QR to hand over.</p>
+        <section class="card system">
+          <div class="row spread"><span class="brandmark">${logoSvg("Square")}<h2>Square</h2></span><span class="pill live">Live</span></div>
           <p class="muted">Sign in to your Square account and approve ${esc(platform)}. Your menu, logo, address and hours come
           from Square; you never share a password with us.</p>
           <a class="btn" href="/connect/square/start">Sign in with Square</a>
         </section>
         <section class="card">
-          <h2>Another system</h2>
-          <p class="muted">We're adding more. Tell us which one you use and we'll email you when it's ready.</p>
+          <div class="row spread"><h2>Another system</h2><span class="pill">Coming</span></div>
+          <p class="muted">We're adding more. Pick yours and we'll email you when it's ready.</p>
           <form method="post" action="/connect/request" class="stack">
-            <label>Your system <select name="system">${OTHER_SYSTEMS.map((s) => `<option>${esc(s)}</option>`).join("")}</select></label>
+            <fieldset class="choices"><legend class="sr">Your system</legend>${OTHER_SYSTEMS.map(
+              (s, i) => `<label class="choice"><input type="radio" name="system" value="${esc(s)}"${i === 0 ? " checked" : ""}>${logoSvg(s)}<span>${esc(s)}</span></label>`,
+            ).join("")}</fieldset>
             <label>Your email <input type="email" name="email" required maxlength="200" autocomplete="email"></label>
             <button class="btn ghost" type="submit">Let me know</button>
           </form>
@@ -396,7 +404,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
         page(
           "Your venues",
           `<p class="lede">Sign in with the Square account you connected.</p><p><a class="btn" href="/connect/square/start?next=seller">Sign in with Square</a></p>
-          <p class="muted small">New here? <a href="/connect">Connect your POS</a>.</p>`,
+          <p class="muted small">New here? <a href="/connect">Integrate your POS</a>.</p>`,
         ),
       );
     }
@@ -495,8 +503,8 @@ function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-function pageHtml(o: { platform: string; title: string; body: string; step?: number }): string {
-  const steps = ["Connect", "Location", "Payments", "Done"];
+function pageHtml(o: { platform: string; title: string; body: string; step?: number; head?: string }): string {
+  const steps = ["Integrate", "Location", "Payments", "Done"];
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(o.title)} · ${esc(o.platform)}</title>
@@ -525,7 +533,7 @@ a { color:inherit; text-underline-offset:3px; }
 .row.spread { justify-content:space-between; }
 label { display:grid; gap:6px; font-size:14px; font-weight:600; }
 label.check { display:flex; gap:10px; align-items:flex-start; font-weight:400; }
-input[type=email], input[name=wallet], select { font:inherit; font-size:15px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); width:100%; }
+input[type=email], input[type=url], input[name=wallet], select { font:inherit; font-size:15px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); width:100%; }
 input[type=color] { width:56px; height:36px; border:1px solid var(--line); border-radius:8px; background:none; padding:2px; }
 .btn { display:inline-block; font:inherit; font-size:15px; font-weight:600; text-decoration:none; text-align:center; padding:11px 16px; border-radius:10px; border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); cursor:pointer; }
 .btn.ghost { background:transparent; color:var(--fg); border-color:var(--line); }
@@ -539,8 +547,17 @@ input[type=color] { width:56px; height:36px; border:1px solid var(--line); borde
 .pill { font-size:12px; border:1px solid var(--line); border-radius:999px; padding:3px 10px; color:var(--muted); }
 ol { margin:0; padding-left:20px; display:grid; gap:6px; color:var(--muted); }
 details summary { cursor:pointer; }
-</style></head>
-<body><main>
+.brandmark { display:flex; align-items:center; gap:10px; }
+.logo { width:22px; height:22px; flex:0 0 auto; }
+.pill.live { color:var(--ok); border-color:currentColor; }
+.choices { border:0; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; }
+.choice { display:flex; align-items:center; gap:9px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-weight:500; cursor:pointer; }
+.choice input { margin:0; }
+.choice .logo { width:18px; height:18px; }
+.choice:has(input:checked) { border-color:var(--fg); }
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+</style>${o.head ?? ""}</head>
+<body class="ap-signup"><main>
 <header><a href="/">${esc(o.platform)}</a>${
     o.step ? `<span class="steps">${steps.map((s, i) => `<span class="${i + 1 === o.step ? "on" : ""}">${i + 1}. ${s}</span>`).join("")}</span>` : ""
   }</header>
