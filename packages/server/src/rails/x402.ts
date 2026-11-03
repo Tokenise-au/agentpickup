@@ -23,6 +23,8 @@ import {
 import type { X402RailConfig } from "../config.js";
 
 export const X402_PAY_ROUTE = "/api/orders/:id/pay";
+/** Order and pay in one call, at an address that stays the same, so x402 catalogues can list the shop. */
+export const X402_ORDER_ROUTE = "/api/x402/order";
 
 export function orderIdFromPayPath(path: string): string | null {
   return path.match(/\/api\/orders\/([^/]+)\/pay$/)?.[1] ?? null;
@@ -51,20 +53,7 @@ export function x402PayMiddleware(
   // The x402 middleware matches the full request path, so a shop under a path registers its prefix.
 ): MiddlewareHandler {
   const network = config.network ?? "eip155:84532";
-  const facilitator =
-    config.facilitator ?? new HTTPFacilitatorClient({ url: config.facilitatorUrl ?? "https://x402.org/facilitator" });
-  const kid = `${didWebFor(deps.baseUrl)}#${deps.key.kid}`;
-  const issuer = createJWSOfferReceiptIssuer(kid, {
-    kid,
-    format: "jws",
-    algorithm: "EdDSA",
-    sign: async (input) => sign(null, input, deps.key.privateKey).toString("base64url"),
-  });
-  const server = new x402ResourceServer(facilitator)
-    .register(network, new ExactEvmScheme())
-    .registerExtension(bazaarResourceServerExtension)
-    .registerExtension(createOfferReceiptExtension(issuer))
-    .registerExtension(paymentIdentifierResourceServerExtension);
+  const server = resourceServer(config, deps.key, deps.baseUrl);
   return paymentMiddleware(
     {
       [`POST ${new URL(deps.baseUrl).pathname.replace(/\/+$/, "")}${X402_PAY_ROUTE}`]: {
@@ -104,6 +93,119 @@ export function x402PayMiddleware(
           }),
           ...declareOfferReceiptExtension({ includeTxHash: true }),
           [PAYMENT_IDENTIFIER]: declarePaymentIdentifierExtension(false),
+        },
+      },
+    },
+    server,
+  );
+}
+
+/** The x402 resource server for a shop: its facilitator, plus bazaar, signed offers/receipts and payment-identifier. */
+function resourceServer(config: X402RailConfig, key: SigningKey, baseUrl: string) {
+  const facilitator =
+    config.facilitator ?? new HTTPFacilitatorClient({ url: config.facilitatorUrl ?? "https://x402.org/facilitator" });
+  const kid = `${didWebFor(baseUrl)}#${key.kid}`;
+  const issuer = createJWSOfferReceiptIssuer(kid, {
+    kid,
+    format: "jws",
+    algorithm: "EdDSA",
+    sign: async (input) => sign(null, input, key.privateKey).toString("base64url"),
+  });
+  return new x402ResourceServer(facilitator)
+    .register(config.network ?? "eip155:84532", new ExactEvmScheme())
+    .registerExtension(bazaarResourceServerExtension)
+    .registerExtension(createOfferReceiptExtension(issuer))
+    .registerExtension(paymentIdentifierResourceServerExtension);
+}
+
+export interface OrderRouteListing {
+  /** What the catalogue shows: the shop, where to collect, how it's paid. */
+  description: string;
+  serviceName: string;
+  tags: string[];
+  iconUrl?: string;
+  /** An item id from the menu, for the examples. */
+  exampleItem: string;
+}
+
+/**
+ * The one-step order at a fixed address: GET <shop>/api/x402/order?items=id:qty,... (what catalogue checks call,
+ * and agents that only GET), or POST with { items, email?, name? } for a QR by email too. Priced from the items
+ * on every request; with no items, one of the first menu item.
+ */
+export function x402OrderMiddleware(
+  config: X402RailConfig,
+  deps: { quote: (ctx: { query: (name: string) => string | undefined; body: () => Promise<unknown> }) => Promise<string | null>; key: SigningKey; baseUrl: string; listing: OrderRouteListing },
+): MiddlewareHandler {
+  const network = config.network ?? "eip155:84532";
+  const server = resourceServer(config, deps.key, deps.baseUrl);
+  const path = `${new URL(deps.baseUrl).pathname.replace(/\/+$/, "")}${X402_ORDER_ROUTE}`;
+  const accepts = [
+    {
+      scheme: "exact" as const,
+      network,
+      payTo: config.payTo,
+      maxTimeoutSeconds: 120,
+      price: async (ctx: { adapter: { getQueryParam?(name: string): string | string[] | undefined; getBody?(): unknown } }) => {
+        const price = await deps.quote({
+          query: (name) => {
+            const v = ctx.adapter.getQueryParam?.(name);
+            return Array.isArray(v) ? v[0] : v;
+          },
+          body: async () => (ctx.adapter.getBody ? await ctx.adapter.getBody() : undefined),
+        });
+        if (!price) throw new Error("nothing to order");
+        return price;
+      },
+    },
+  ];
+  const { description, serviceName, tags, iconUrl, exampleItem } = deps.listing;
+  const output = {
+    example: {
+      order: { id: "ord_7HkQ2mXc9aRt", status: "paid", items: [{ id: exampleItem, name: serviceName, qty: 1 }], currency: "usd" },
+      passUrl: `${deps.baseUrl}/p/Ya7qVHjkKI7bn4gU`,
+      emailedTo: null,
+    },
+  };
+  const common = { accepts, description, mimeType: "application/json", serviceName, tags, ...(iconUrl ? { iconUrl } : {}) };
+  const others = { ...declareOfferReceiptExtension({ includeTxHash: true }), [PAYMENT_IDENTIFIER]: declarePaymentIdentifierExtension(false) };
+  return paymentMiddleware(
+    {
+      [`GET ${path}`]: {
+        ...common,
+        extensions: {
+          ...declareDiscoveryExtension({
+            input: { items: `${exampleItem}:1` },
+            inputSchema: {
+              type: "object",
+              properties: {
+                items: { type: "string", description: "Items as id:qty pairs, comma-separated. Defaults to one of the first menu item." },
+                name: { type: "string", description: "Name on the order, shown to staff" },
+              },
+            },
+            output,
+          }),
+          ...others,
+        },
+      },
+      [`POST ${path}`]: {
+        ...common,
+        extensions: {
+          ...declareDiscoveryExtension({
+            bodyType: "json",
+            input: { items: [{ id: exampleItem, qty: 1 }], email: "customer@example.com", name: "Sam" },
+            inputSchema: {
+              type: "object",
+              properties: {
+                items: { type: "array", items: { type: "object", properties: { id: { type: "string" }, qty: { type: "integer", minimum: 1, maximum: 20 } }, required: ["id", "qty"] } },
+                email: { type: "string", description: "Where the shop also emails the pickup QR" },
+                name: { type: "string", description: "Name on the order, shown to staff" },
+              },
+              required: ["items"],
+            },
+            output,
+          }),
+          ...others,
         },
       },
     },

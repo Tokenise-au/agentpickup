@@ -28,7 +28,16 @@ import { paymentSummary, renderPassEmail, type PassEmailKind } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
 import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
 import { stripeCardRail } from "./rails/stripe.js";
-import { X402_PAY_ROUTE, createX402Refunder, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
+import {
+  X402_ORDER_ROUTE,
+  X402_PAY_ROUTE,
+  createX402Refunder,
+  paymentIdFromRequest,
+  readSettlement,
+  receiptFrom,
+  x402OrderMiddleware,
+  x402PayMiddleware,
+} from "./rails/x402.js";
 import { createSiwxGate } from "./siwx.js";
 import { challengeIdOf, createMppRail, MPP_PAY_ROUTE } from "./rails/mpp.js";
 import { sptClient } from "./rails/spt.js";
@@ -256,7 +265,7 @@ export function createCollect(config: CollectConfig) {
 
   // ---------- order lifecycle ----------
 
-  async function createOrder(input: OrderInput): Promise<Order> {
+  async function createOrder(input: OrderInput, opts: { emailOptional?: boolean } = {}): Promise<Order> {
     if (!input || !Array.isArray(input.items) || input.items.length === 0 || input.items.length > 20) {
       throw new InputError("Add between 1 and 20 items.");
     }
@@ -271,7 +280,7 @@ export function createCollect(config: CollectConfig) {
 
     const email = input.email?.trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError("That email doesn't look right.");
-    if (!email && rail !== "card") throw new InputError("An email is needed to send the pickup QR.");
+    if (!email && rail !== "card" && !opts.emailOptional) throw new InputError("An email is needed to send the pickup QR.");
 
     await menuReady;
     const items: OrderItem[] = input.items.map(({ id, qty }) => {
@@ -903,6 +912,104 @@ export function createCollect(config: CollectConfig) {
       }),
     );
     app.post(X402_PAY_ROUTE, (c) => c.json({ ok: true }));
+
+    // ---------- one-step order and pay, at a fixed address the x402 catalogues can list ----------
+    type QuickInput = { items: { id: string; qty: number }[]; email?: string; name?: string };
+    const quickInput = (itemsQuery: string | undefined, nameQuery: string | undefined, body: unknown): QuickInput => {
+      const b = (body ?? {}) as { items?: unknown; email?: unknown; name?: unknown };
+      const items = Array.isArray(b.items)
+        ? b.items.map((i: { id?: unknown; qty?: unknown }) => ({ id: String(i?.id ?? ""), qty: Number(i?.qty ?? 1) }))
+        : itemsQuery
+          ? itemsQuery.split(",").map((part) => {
+              const [id, qty] = part.split(":");
+              return { id: (id ?? "").trim(), qty: qty ? Number(qty) : 1 };
+            })
+          : // Catalogue checks call with no items: one of the first menu item.
+            menu.length
+            ? [{ id: menu[0].id, qty: 1 }]
+            : [];
+      const name = typeof b.name === "string" ? b.name : nameQuery;
+      return { items, ...(typeof b.email === "string" ? { email: b.email } : {}), ...(name ? { name } : {}) };
+    };
+    /** What these items cost in US cents, or why they can't be ordered. */
+    async function quickQuote(input: QuickInput): Promise<{ usdCents: number } | { error: string }> {
+      await menuReady;
+      if (!input.items.length || input.items.length > 20) return { error: "Order between 1 and 20 items." };
+      let total = 0;
+      for (const { id, qty } of input.items) {
+        const product = menuById.get(id);
+        if (!product) return { error: `Unknown item ${id}.` };
+        if (!Number.isInteger(qty) || qty < 1 || qty > 20) return { error: "Quantities must be 1 to 20." };
+        total += product.priceCents * qty;
+      }
+      if (currency === "usd") return { usdCents: total };
+      const usdCents = Math.round(await Promise.resolve(x402!.toUsdCents!(total, currency)).catch(() => NaN));
+      return Number.isFinite(usdCents) && usdCents >= 1 ? { usdCents } : { error: "This order can't be priced in USD right now. Try again shortly." };
+    }
+    const quickOrders = new WeakMap<Request, { orderId: string }>();
+    app.use(X402_ORDER_ROUTE, async (c, next) => {
+      if (c.req.method !== "GET" && c.req.method !== "POST") return next();
+      const body = c.req.method === "POST" ? await c.req.json().catch(() => null) : null;
+      const input = quickInput(c.req.query("items"), c.req.query("name"), body);
+      if (input.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) return c.json({ error: "That email doesn't look right." }, 400);
+      const quote = await quickQuote(input);
+      if ("error" in quote) return c.json({ error: quote.error }, 400);
+      // payment-identifier: the same payment retried gets the order it already made.
+      const paymentId = paymentIdFromRequest(c.req.raw.headers);
+      if (paymentId) {
+        const prior = await store.getDoc<{ orderId: string }>("x402-payment", paymentId);
+        const order = prior ? await store.getOrder(prior.orderId) : null;
+        if (order && order.status !== "awaiting_payment") return c.json(paidBody(order, null, true), 200);
+      }
+      await next();
+      const settlement = c.res.status === 200 ? readSettlement(c.res) : null;
+      const made = quickOrders.get(c.req.raw);
+      if (!settlement?.success || !made) return;
+      const receipt = receiptFrom(settlement);
+      const paid = await markPaid(made.orderId, {
+        paymentRef: settlement.transaction,
+        payer: settlement.payer,
+        meta: { network: settlement.network, via: "x402 order route", ...(paymentId ? { paymentId } : {}), ...(receipt ? { receipt } : {}) },
+      });
+      if (paymentId) await store.putDoc("x402-payment", paymentId, { orderId: paid.id });
+      const headers = new Headers(c.res.headers);
+      headers.set("Content-Type", "application/json");
+      headers.delete("Content-Length");
+      c.res = new Response(JSON.stringify(paidBody(paid, receipt)), { status: 200, headers });
+    });
+    const where = [merchant.location.name, merchant.location.address].filter(Boolean).join(", ");
+    const onTestnet = (x402.network ?? "eip155:84532") === "eip155:84532";
+    app.use(
+      X402_ORDER_ROUTE,
+      x402OrderMiddleware(x402, {
+        quote: async (ctx) => {
+          const input = quickInput(ctx.query("items"), ctx.query("name"), await ctx.body());
+          const quote = await quickQuote(input);
+          return "error" in quote ? null : `$${(quote.usdCents / 100).toFixed(2)}`;
+        },
+        key,
+        baseUrl: base,
+        listing: {
+          description: `${merchant.name}: order ahead and collect in person at ${where}. Paid in USDC${onTestnet ? " on a test network" : ""}; the response carries the pickup pass with its QR code.`.slice(0, 300),
+          serviceName: merchant.name.slice(0, 60),
+          tags: ["pickup", "click-and-collect", "agentpickup"],
+          ...(merchant.logoUrl && /^https:\/\/.+\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(merchant.logoUrl) ? { iconUrl: merchant.logoUrl } : {}),
+          exampleItem: config.catalog[0]?.id ?? "item-id",
+        },
+      }),
+    );
+    // Reached only with a verified payment: make the order, which the wrapper above marks paid once it settles.
+    app.on(["GET", "POST"], X402_ORDER_ROUTE, async (c) => {
+      const body = c.req.method === "POST" ? await c.req.json().catch(() => null) : null;
+      const input = quickInput(c.req.query("items"), c.req.query("name"), body);
+      const quote = await quickQuote(input);
+      if ("error" in quote) return c.json({ error: quote.error }, 400);
+      const order = await createOrder({ items: input.items, email: input.email, name: input.name, rail: "x402" }, { emailOptional: true });
+      // The price the payment was checked against, fixed on the order.
+      if (currency !== "usd") await store.updateOrder(order.id, { usdCents: quote.usdCents });
+      quickOrders.set(c.req.raw, { orderId: order.id });
+      return c.json({ ok: true, orderId: order.id });
+    });
 
     // Sign-In-With-X: the wallet that paid can fetch the pass again, with no account.
     const siwx = createSiwxGate({ baseUrl: base, network: x402.network ?? "eip155:84532" });
