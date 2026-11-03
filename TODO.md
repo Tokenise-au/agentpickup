@@ -33,7 +33,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Demo agent wallet on Base Sepolia: real x402 payments through the x402.org facilitator, Basescan link, daily cap, café hands test USDC back through the facilitator when the agent runs low
 - [ ] Fund the demo agent with test USDC (Dave: faucet.circle.com, Base Sepolia, `0xd253e213cE143Aa0E1e1cAfc92f7AE82c98aB3bB`)
 - [x] MCP server `@agentpickup/mcp`: five tools, wallet with spend cap and testnet default, stdio CLI, Streamable HTTP handler, hosted at `/mcp` on the demo
-- [ ] MCP Registry listing (`packages/mcp/server.json`, `io.github.dav3trad3r/agentpickup`) after npm publish
+- [x] MCP Registry listing `io.github.dav3trad3r/agentpickup` 0.1.0 (npm package + hosted `/mcp`). Re-publish with `npx tsx scripts/publish-mcp-registry.ts --go` after bumping `packages/mcp/server.json`
 
 ## Roadmap to production
 

@@ -58,8 +58,8 @@ real goods need that raised.
 { "mcpServers": { "agentpickup": { "type": "http", "url": "https://web-production-3cfc1.up.railway.app/mcp" } } }
 ```
 
-Run it locally with `npx -y @agentpickup/mcp` and `AGENTPICKUP_SHOP_URL` / `AGENTPICKUP_WALLET_KEY`. See
-[packages/mcp](packages/mcp/README.md).
+Run it locally with `npx -y @agentpickup/mcp` and `AGENTPICKUP_SHOP_URL` / `AGENTPICKUP_WALLET_KEY`. It's listed
+in the official MCP Registry as `io.github.dav3trad3r/agentpickup`. See [packages/mcp](packages/mcp/README.md).
 
 ## Use it in your own server
 

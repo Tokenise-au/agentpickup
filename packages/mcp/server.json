@@ -3,21 +3,60 @@
   "name": "io.github.dav3trad3r/agentpickup",
   "title": "agentPickup",
   "description": "Order from a shop, pay in USDC over x402, and get the QR to collect in person.",
-  "repository": { "url": "https://github.com/dav3trad3r/agentpickup", "source": "github", "subfolder": "packages/mcp" },
+  "repository": {
+    "url": "https://github.com/dav3trad3r/agentpickup",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
   "version": "0.1.0",
+  "websiteUrl": "https://web-production-3cfc1.up.railway.app",
+  "icons": [
+    {
+      "src": "https://web-production-3cfc1.up.railway.app/favicon.svg",
+      "mimeType": "image/svg+xml"
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@agentpickup/mcp",
       "version": "0.1.0",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
-        { "name": "AGENTPICKUP_SHOP_URL", "description": "The agentPickup shop to order from", "isRequired": false, "format": "string" },
-        { "name": "AGENTPICKUP_WALLET_KEY", "description": "EVM private key that pays over x402. Without it, pay_order only quotes", "isRequired": false, "isSecret": true, "format": "string" },
-        { "name": "AGENTPICKUP_MAX_PER_ORDER", "description": "Most the wallet pays for one order, e.g. $25", "isRequired": false, "format": "string" },
-        { "name": "AGENTPICKUP_NETWORKS", "description": "Comma-separated CAIP-2 networks the wallet may pay on (default eip155:84532)", "isRequired": false, "format": "string" }
+        {
+          "name": "AGENTPICKUP_SHOP_URL",
+          "description": "The agentPickup shop to order from",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "AGENTPICKUP_WALLET_KEY",
+          "description": "EVM private key that pays over x402. Without it, pay_order only quotes",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "AGENTPICKUP_MAX_PER_ORDER",
+          "description": "Most the wallet pays for one order, e.g. $25",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "AGENTPICKUP_NETWORKS",
+          "description": "Comma-separated CAIP-2 networks the wallet may pay on (default eip155:84532)",
+          "isRequired": false,
+          "format": "string"
+        }
       ]
     }
   ],
-  "remotes": [{ "type": "streamable-http", "url": "https://web-production-3cfc1.up.railway.app/mcp" }]
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://web-production-3cfc1.up.railway.app/mcp"
+    }
+  ]
 }
