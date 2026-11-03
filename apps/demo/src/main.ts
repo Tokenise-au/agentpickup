@@ -39,11 +39,14 @@ function ap2Key(): string {
 
 const store = new SqliteStore(join(dataDir, "collect.db"));
 
-// The demo's testnet wallets (Base Sepolia). With DEMO_CAFE_KEY set, the café's own address is the payTo.
-const demoAgentKey = env.DEMO_AGENT_KEY as `0x${string}` | undefined;
-const demoCafeKey = env.DEMO_CAFE_KEY as `0x${string}` | undefined;
-const x402PayTo = demoCafeKey ? privateKeyToAccount(demoCafeKey).address : env.X402_PAY_TO;
+// The demo's testnet wallets (Base Sepolia). On testnet the café's own address is the payTo, so it can
+// hand test USDC back to the agent. On any other network, payments go to X402_PAY_TO (the owner's
+// wallet) and the demo keys, which sit in server config, never touch real money.
 const x402Network = (env.X402_NETWORK as `${string}:${string}`) || DEMO_NETWORK;
+const onTestnet = x402Network === DEMO_NETWORK;
+const demoAgentKey = onTestnet ? (env.DEMO_AGENT_KEY as `0x${string}` | undefined) : undefined;
+const demoCafeKey = onTestnet ? (env.DEMO_CAFE_KEY as `0x${string}` | undefined) : undefined;
+const x402PayTo = demoCafeKey ? privateKeyToAccount(demoCafeKey).address : env.X402_PAY_TO;
 
 const collect = createCollect({
   baseUrl,
@@ -100,7 +103,7 @@ const collect = createCollect({
 
 // A real agent wallet that pays demo orders over x402 on Base Sepolia, so the demo settles on-chain.
 const demoAgent =
-  demoAgentKey && x402PayTo && x402Network === DEMO_NETWORK
+  demoAgentKey && x402PayTo
     ? createDemoAgent({
         agentKey: demoAgentKey,
         cafeKey: demoCafeKey,

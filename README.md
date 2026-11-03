@@ -26,7 +26,7 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 |---|---|
 | `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) | Card checkout. Holds the card, captures on scan. Use `sk_test_` keys. Also the SPT handler for UCP. |
 | `STRIPE_PROFILE_ID` | The Stripe profile id advertised to UCP platforms. |
-| `X402_PAY_TO`, `X402_NETWORK` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC). |
+| `X402_PAY_TO`, `X402_NETWORK` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC), where the demo café wallet takes the payments; on any other network (`eip155:8453` is Base mainnet) they go to `X402_PAY_TO` and the demo wallets switch off. Mainnet also needs a mainnet facilitator. |
 | `MPP_NETWORK_ID`, `MPP_CHALLENGE_SECRET` | MPP agent payments by card or Link into your Stripe (needs Stripe's MPP access). |
 | `RESEND_API_KEY`, `MAIL_FROM` | Real email delivery, QR embedded as an inline image. |
 | `STAFF_KEY` | Locks the scanner. Without it the demo runs with `allowOpenStaff`. |
