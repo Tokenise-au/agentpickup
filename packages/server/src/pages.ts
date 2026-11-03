@@ -10,14 +10,16 @@ interface PageOpts {
   body: string;
   scripts?: string[];
   inlineScript?: string;
+  /** Where the shop lives ("" at a domain root, "/v/cafe" under a path): relative links resolve against it. */
+  root?: string;
 }
 
-export function page({ merchant, title, body, scripts = [], inlineScript }: PageOpts): string {
+export function page({ merchant, title, body, scripts = [], inlineScript, root }: PageOpts): string {
   const color = merchant.brandColor ?? "#111827";
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
+<meta name="robots" content="noindex">${root !== undefined ? `\n<base href="${esc(root)}/">` : ""}
 <title>${esc(title)} · ${esc(merchant.name)}</title>
 <style>
 :root{--brand:${esc(color)};--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--bg:#f3f4f6;--card:#fff;--ok:#047857;--okbg:#ecfdf5;--bad:#b91c1c;--badbg:#fef2f2}
@@ -126,21 +128,21 @@ export function messagePage(merchant: MerchantProfile, title: string, text: stri
   return page({ merchant, title, body: `<div class="card"><h1>${esc(title)}</h1><p>${esc(text)}</p></div>` });
 }
 
-export function staffLoginPage(merchant: MerchantProfile, failed = false): string {
+export function staffLoginPage(merchant: MerchantProfile, failed = false, root = ""): string {
   const body = `
 <div class="card">
   <h1>Staff sign-in</h1>
   <p class="muted">Enter the staff key to open the scanner on this device.</p>
   ${failed ? `<div class="banner" style="background:var(--badbg);color:var(--bad)">That key didn't work.</div>` : ""}
-  <form method="post" action="/staff/login">
+  <form method="post" action="staff/login">
     <input type="password" name="key" autocomplete="current-password" placeholder="Staff key" required>
     <button class="btn block" style="margin-top:12px">Open scanner</button>
   </form>
 </div>`;
-  return page({ merchant, title: "Staff sign-in", body });
+  return page({ merchant, title: "Staff sign-in", body, root });
 }
 
-export function scannerPage(o: { merchant: MerchantProfile; open: boolean; prefill?: string }): string {
+export function scannerPage(o: { merchant: MerchantProfile; open: boolean; prefill?: string; root?: string }): string {
   const body = `
 ${o.open ? `<div class="banner warn">Demo mode: this scanner is open to anyone. Set a staff key before using it in a real shop.</div>` : ""}
 <div class="card" id="scanCard">
@@ -163,7 +165,8 @@ ${o.open ? `<div class="banner warn">Demo mode: this scanner is open to anyone. 
     merchant: o.merchant,
     title: "Scanner",
     body,
-    scripts: ["/collect-assets/jsQR.js", "/collect-assets/scanner.js"],
+    scripts: ["collect-assets/jsQR.js", "collect-assets/scanner.js"],
+    root: o.root ?? "",
     inlineScript: o.prefill ? `window.__collectPrefill=${JSON.stringify(o.prefill)};` : undefined,
   });
 }

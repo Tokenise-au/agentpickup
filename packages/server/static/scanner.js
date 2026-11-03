@@ -24,7 +24,7 @@
       credentials: "same-origin",
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401) location.href = "/staff";
+    if (res.status === 401) location.href = "staff";
     return { ok: res.ok, data };
   }
 
@@ -90,7 +90,7 @@
 
   async function lookup(scan) {
     busy = true;
-    const { ok, data } = await api("/api/staff/lookup", { scan });
+    const { ok, data } = await api("api/staff/lookup", { scan });
     if (!ok) return showResult("bad", data.title || "Not a valid pass", data.detail);
     const o = data.order;
     const collectable = o.status === "paid" || o.status === "ready";
@@ -111,7 +111,7 @@
       $("handover").onclick = async () => {
         $("handover").disabled = true;
         $("handover").textContent = "Completing…";
-        const r = await api("/api/staff/collect", { scan });
+        const r = await api("api/staff/collect", { scan });
         if (r.ok) showResult("ok", "Collected", r.data.message);
         else showResult("bad", r.data.title || "Couldn't complete", r.data.detail);
       };
@@ -120,7 +120,7 @@
   }
 
   async function loadBoard() {
-    const { ok, data } = await api("/api/staff/orders");
+    const { ok, data } = await api("api/staff/orders");
     const board = $("board");
     if (!ok) return (board.textContent = "Couldn't load orders.");
     if (!data.orders.length) return (board.textContent = "No open orders.");
@@ -139,7 +139,7 @@
     board.querySelectorAll("[data-ready]").forEach((b) => {
       b.onclick = async () => {
         b.disabled = true;
-        await api("/api/staff/ready", { orderId: b.dataset.ready });
+        await api("api/staff/ready", { orderId: b.dataset.ready });
         loadBoard();
       };
     });

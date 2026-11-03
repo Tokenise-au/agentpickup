@@ -49,6 +49,7 @@ export { PostgresStore, type PostgresStoreOptions, type Queryable } from "./post
 export { parseCatalog, type ConnectConfig } from "./connect.js";
 export type { ConnectorContext, PickupConnector } from "./connectors/types.js";
 export { squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
+export { createVenueHost, type VenueHostConfig, type VenueInput } from "./venues.js";
 export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
 
 const UNPAID_TIMEOUT_MS = 60 * 60_000;
@@ -89,6 +90,8 @@ export function createCollect(config: CollectConfig) {
   const merchant: MerchantProfile = { ...config.merchant, location: config.merchant.location ?? { name: config.merchant.name } };
   const key = loadSigningKey(config.signingKeyPem);
   const base = config.baseUrl.replace(/\/$/, "");
+  // A shop can live at a domain root or under a path (https://host/v/cafe); routes, links and cookies follow it.
+  const basePath = new URL(base).pathname.replace(/\/+$/, "");
   const currency = (config.currency ?? "usd").toLowerCase();
   const windowMs = (config.collectWindowMinutes ?? 24 * 60) * 60_000;
   const card = config.payments.card ? stripeCardRail(config.payments.card) : null;
@@ -471,7 +474,8 @@ export function createCollect(config: CollectConfig) {
   // Failed pass or pickup-code lookups per client: 12 in 10 minutes and the client waits.
   const lookupThrottle = createFailureThrottle({ max: 12, windowMs: 10 * 60_000 });
 
-  const app = new Hono();
+  // Typed as a plain Hono: basePath only prefixes the routes.
+  const app = new Hono().basePath(basePath || "/") as unknown as Hono;
   for (const path of ["/api/*", "/ucp/*", "/acp/*", "/connect/*"]) {
     app.use(path, bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }));
   }
@@ -492,6 +496,7 @@ export function createCollect(config: CollectConfig) {
   app.get("/collect-assets/scanner.js", asset(scannerJs));
   app.get("/.well-known/collect-keys.json", (c) => c.json(toJwks([key])));
   app.get("/.well-known/did.json", (c) => c.json(didDocument(base, key)));
+  if (basePath) app.get("/did.json", (c) => c.json(didDocument(base, key)));
   app.get("/openapi.json", (c) =>
     c.json(
       openApiDocument({
@@ -846,7 +851,7 @@ export function createCollect(config: CollectConfig) {
   // screen, so any camera app works as a scanner; everyone else sees their pass.
   app.get("/c/:token", async (c) => {
     const token = c.req.param("token");
-    if (isStaffDevice(c)) return c.redirect(`/staff?scan=${encodeURIComponent(token)}`);
+    if (isStaffDevice(c)) return c.redirect(`${basePath}/staff?scan=${encodeURIComponent(token)}`);
     const pid = (() => {
       try {
         return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).pid as string;
@@ -858,31 +863,31 @@ export function createCollect(config: CollectConfig) {
     if (!order || !verifyPass(token, [key], 0).ok) {
       return c.html(messagePage(merchant, "Pass not found", "This code wasn't issued by this shop."), 404);
     }
-    return c.redirect(`/p/${pid}`);
+    return c.redirect(`${basePath}/p/${pid}`);
   });
 
   app.get("/staff", (c) => {
     if (!staffToken && !staffOpen) {
       return c.html(messagePage(merchant, "Staff access isn't set up", "Ask the shop to set a staff key."), 403);
     }
-    if (staffToken && !isStaffDevice(c)) return c.html(staffLoginPage(merchant));
-    if (staffOpen) setCookie(c, STAFF_COOKIE, "open", { path: "/", sameSite: "Lax", httpOnly: true, maxAge: 60 * 60 * 24 * 30 });
-    return c.html(scannerPage({ merchant, open: staffOpen, prefill: c.req.query("scan") }));
+    if (staffToken && !isStaffDevice(c)) return c.html(staffLoginPage(merchant, false, basePath));
+    if (staffOpen) setCookie(c, STAFF_COOKIE, "open", { path: basePath || "/", sameSite: "Lax", httpOnly: true, maxAge: 60 * 60 * 24 * 30 });
+    return c.html(scannerPage({ merchant, open: staffOpen, prefill: c.req.query("scan"), root: basePath }));
   });
 
   app.post("/staff/login", async (c) => {
     const form = await c.req.parseBody();
     const given = typeof form.key === "string" ? form.key : "";
     const hashed = createHmac("sha256", given).update("collect-staff-v1").digest("base64url");
-    if (!staffToken || !safeEqual(hashed, staffToken)) return c.html(staffLoginPage(merchant, true), 401);
+    if (!staffToken || !safeEqual(hashed, staffToken)) return c.html(staffLoginPage(merchant, true, basePath), 401);
     setCookie(c, STAFF_COOKIE, staffToken, {
-      path: "/",
+      path: basePath || "/",
       sameSite: "Lax",
       httpOnly: true,
       secure: base.startsWith("https://"),
       maxAge: 60 * 60 * 24 * 30,
     });
-    return c.redirect("/staff");
+    return c.redirect(`${basePath}/staff`);
   });
 
   const throttled: MiddlewareHandler = async (c, next) => {

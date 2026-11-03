@@ -29,8 +29,11 @@ export function orderIdFromPayPath(path: string): string | null {
 }
 
 /** did:web identifier for the merchant origin, e.g. did:web:shop.example or did:web:localhost%3A8402. */
+/** did:web for the shop: did:web:host, or did:web:host:v:cafe for a shop under a path (its document at /v/cafe/did.json). */
 export function didWebFor(baseUrl: string): string {
-  return `did:web:${encodeURIComponent(new URL(baseUrl).host)}`;
+  const url = new URL(baseUrl);
+  const path = url.pathname.split("/").filter(Boolean).map(encodeURIComponent);
+  return ["did:web", encodeURIComponent(url.host), ...path].join(":");
 }
 
 /**
@@ -45,6 +48,7 @@ export function didWebFor(baseUrl: string): string {
 export function x402PayMiddleware(
   config: X402RailConfig,
   deps: { priceFor: (orderId: string) => Promise<string | null> | string | null; key: SigningKey; baseUrl: string },
+  // The x402 middleware matches the full request path, so a shop under a path registers its prefix.
 ): MiddlewareHandler {
   const network = config.network ?? "eip155:84532";
   const facilitator =
@@ -63,7 +67,7 @@ export function x402PayMiddleware(
     .registerExtension(paymentIdentifierResourceServerExtension);
   return paymentMiddleware(
     {
-      [`POST ${X402_PAY_ROUTE}`]: {
+      [`POST ${new URL(deps.baseUrl).pathname.replace(/\/+$/, "")}${X402_PAY_ROUTE}`]: {
         accepts: [
           {
             scheme: "exact",
