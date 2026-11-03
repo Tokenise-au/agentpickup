@@ -3,147 +3,333 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>agentPickup: the pickup layer for agent payments</title>
-<meta name="description" content="Turn an x402 or card payment into a signed pickup pass. The merchant's scan proves the right person collected the order, then the payment settles. An open format and a drop-in library for facilitators, wallets and ordering platforms.">
+<title>agentPickup: agents order, people pick up</title>
+<meta name="description" content="agentPickup lets AI agents order and pay at real shops, and people collect with a signed QR. Venues connect their Square in minutes and keep their POS. Agents pay in USDC over x402 or by card through Stripe, straight to the venue.">
 <meta name="theme-color" content="#0a0b0d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/site.css">
 <!-- Cloudflare Web Analytics: cookieless page counts, landing page only -->
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "5cee743947dd4d11936d67121906ca84"}'></script>
 </head>
-<body>
+<body class="home">
 <header class="nav">
   <div class="wrap nav-inner">
     <a class="brand" href="#top" aria-label="agentPickup home"><i></i><span><span class="dim">agent</span>Pickup</span></a>
     <nav class="links" aria-label="Sections">
-      <a href="#gap">/gap</a><a href="#standards">/standards</a><a href="#spec">/spec</a><a href="#demo">/demo</a><a href="#partners">/partners</a>
+      <a href="#how">/how</a><a href="#venues">/venues</a><a href="#builders">/builders</a><a href="#spec">/spec</a><a href="#demo">/demo</a>
     </nav>
-    <a class="pill" href="/connect">Integrate it ↗</a>
+    <a class="pill" href="/connect">Connect your Square ↗</a>
   </div>
 </header>
 
 <main id="top">
-  <section class="wrap hero">
-    <div class="hero-copy">
-      <span class="badge"><b></b>x402 · MPP · UCP · ACP · AP2 · open format</span>
-      <h1>Agents can pay.<br>Now they can <em>pick up.</em></h1>
-      <p class="lede">agentPickup turns a payment into a signed pickup pass. An agent pays over x402, or a person pays by card, and the buyer gets a QR. The merchant's scan proves the right person collected the order, and only then does the payment settle. It's an open format and a drop-in library for facilitators, agent wallets and ordering platforms.</p>
-      <div class="cta">
-        <a class="btn btn-white" href="/connect">Integrate it ↗</a>
-        <a class="btn btn-outline" href="#demo">Run the live demo</a>
-        <button class="btn btn-outline mono" id="copyInstall" type="button" title="Copy install command">npm i @agentpickup/server</button>
-      </div>
-      <div class="stats">
-        <div><b>~250 B</b><span>signed pass in the QR</span></div>
-        <div><b>Ed25519</b><span>checkable offline</span></div>
-        <div><b>1 scan</b><span>verifies and settles</span></div>
-      </div>
+  <!-- ---------- hero ---------- -->
+  <section class="frame hero">
+    <div class="meta-row mono">
+      <span>agentPickup · the pickup layer for agent payments</span>
+      <span><b class="dot"></b>live at agentpickup.app</span>
+      <span>Brisbane, AU · open format v1</span>
     </div>
-
-    <div class="term hero-term" aria-label="Example agent pickup">
-      <div class="term-top"><i></i><i></i><i></i><span>agent → demo-cafe</span><span class="live">● live</span></div>
-      <div class="log" id="heroLog">
-        <div><span class="t">08:38:02</span><span class="e am">402 required</span><span class="d">POST /api/orders/ord_7Hk…/pay</span><span class="v am">4.00 USDC</span></div>
-        <div><span class="t">08:38:04</span><span class="e">order.paid</span><span class="d">x402 · base · tx 0x9f3c…e21a</span><span class="v">✓</span></div>
-        <div><span class="t">08:38:04</span><span class="e">pass.emailed</span><span class="d">EdDSA · 252 B · QR + code</span><span class="v">✓</span></div>
-        <div><span class="t">08:41:17</span><span class="e vi">order.ready</span><span class="d">second email sent</span><span class="v">✓</span></div>
-        <div><span class="t">08:44:03</span><span class="e ok">order.collected</span><span class="d">counter scan · sig ok · single use</span><span class="v ok">settled</span></div>
-      </div>
-      <div class="pass">
-        <div class="qr" id="heroQr"></div>
-        <div>
-          <div class="k">Pickup code</div>
-          <div class="code">K7P4QX</div>
-          <div class="k">Ed25519 · single use · expires 10:38</div>
-          <span class="cap">collected · proof signed</span>
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <h1 class="display hero-title"><span>Agents can pay.</span><span>Now they can</span><span><em>pick up.</em></span></h1>
+        <p class="lede">An AI agent orders and pays at a real shop. The person walks in and shows a signed QR. Venues connect their Square and keep their POS: agent orders land on the counter screen like any other, and the money goes straight to them.</p>
+        <div class="cta">
+          <a class="btn btn-lime" href="/connect">Connect your Square ↗</a>
+          <a class="btn btn-outline" href="#demo">Run the live demo</a>
+          <button class="btn btn-outline mono" id="copyInstall" type="button" title="Copy the MCP server address">https://agentpickup.app/mcp</button>
         </div>
       </div>
+
+      <aside class="ticket" aria-label="Example pickup pass and its events">
+        <div class="ticket-head mono"><span>demo-cafe</span><span>pickup pass</span></div>
+        <div class="ticket-pass">
+          <div class="qr" id="heroQr"></div>
+          <div>
+            <div class="k">Pickup code</div>
+            <div class="code">K7P4QX</div>
+            <div class="k">2× flat white · for Sam</div>
+            <span class="cap">Ed25519 · single use</span>
+          </div>
+        </div>
+        <div class="tear" aria-hidden="true"></div>
+        <div class="log hero-log" id="heroLog">
+          <div><span class="t">08:38:01</span><span class="e">find_shops</span><span class="d">flat white near the Valley</span><span class="v">3 open</span></div>
+          <div><span class="t">08:38:02</span><span class="e am">402 required</span><span class="d">GET /api/x402/order?items=flat-white:2</span><span class="v am">9.00 USDC</span></div>
+          <div><span class="t">08:38:04</span><span class="e">order.paid</span><span class="d">x402 · base · tx 0x9f3c…e21a</span><span class="v">✓</span></div>
+          <div><span class="t">08:38:05</span><span class="e">square.order</span><span class="d">on the counter screen</span><span class="v">✓</span></div>
+          <div><span class="t">08:41:17</span><span class="e vi">order.ready</span><span class="d">QR emailed to Sam</span><span class="v">✓</span></div>
+          <div><span class="t">08:44:03</span><span class="e ok">order.collected</span><span class="d">counter scan · sig ok</span><span class="v ok">done</span></div>
+        </div>
+      </aside>
+    </div>
+    <div class="facts">
+      <div><b class="display">2 min</b><span class="mono">to connect a Square venue</span></div>
+      <div><b class="display">~250 B</b><span class="mono">signed pass in the QR</span></div>
+      <div><b class="display">1 scan</b><span class="mono">checks it, even offline</span></div>
+      <div><b class="display">$0</b><span class="mono">of your money held by us</span></div>
     </div>
   </section>
 
-  <section id="gap" class="wrap section">
-    <p class="eyebrow">/gap</p>
-    <h2>Agents can pay for physical things.<br>Nobody can prove they collected them.</h2>
-    <p class="sub">The payment and shopping standards each stop one step short of the counter.</p>
-    <div class="table gap-table">
-      <div class="tr th"><span>Layer</span><span>Who covers it</span><span>What's there</span><span>Pickup proof</span></div>
-      <div class="tr"><span class="h">Pay</span><span class="p mono">x402 · MPP</span><span class="p">Money moves per request, in USDC or by card through Stripe. Signed receipts prove a payment happened.</span><span class="mark no">✕ none</span></div>
-      <div class="tr"><span class="h">Shop</span><span class="p mono">UCP · ACP</span><span class="p">UCP lets an agent choose a pickup store at checkout, and ACP has fulfilment options. Neither says how collection is proven.</span><span class="mark no">✕ none</span></div>
-      <div class="tr"><span class="h">Platforms</span><span class="p mono">ordering apps</span><span class="p">Pickup codes exist, but each one is a closed app tied to its own accounts and saved cards.</span><span class="mark no">✕ closed</span></div>
-      <div class="tr hl"><span class="h">Hand over</span><span class="p mono">agentPickup</span><span class="p">A signed pass the merchant scans. It proves the right person collected, and the payment settles on that scan.</span><span class="mark yes">✓ open</span></div>
+  <div class="marquee" aria-label="Works with x402, Square, Stripe, MPP, UCP, ACP, AP2, Visa TAP, Mastercard Agent Pay, USDC on Base and MCP">
+    <div class="marquee-track" aria-hidden="true">
+      <span class="lc">x402</span><i>✳</i><span>Square</span><i>✳</i><span>Stripe</span><i>✳</i><span>MPP</span><i>✳</i><span>UCP</span><i>✳</i><span>ACP</span><i>✳</i><span>AP2</span><i>✳</i><span>Visa TAP</span><i>✳</i><span>Mastercard Agent Pay</span><i>✳</i><span>USDC on Base</span><i>✳</i><span>MCP</span><i>✳</i>
+      <span class="lc">x402</span><i>✳</i><span>Square</span><i>✳</i><span>Stripe</span><i>✳</i><span>MPP</span><i>✳</i><span>UCP</span><i>✳</i><span>ACP</span><i>✳</i><span>AP2</span><i>✳</i><span>Visa TAP</span><i>✳</i><span>Mastercard Agent Pay</span><i>✳</i><span>USDC on Base</span><i>✳</i><span>MCP</span><i>✳</i>
+    </div>
+  </div>
+
+  <!-- ---------- the gap ---------- -->
+  <section id="gap" class="frame band">
+    <div class="band-head">
+      <p class="idx mono">01 / the gap</p>
+      <h2 class="display">Agents can pay for real things. Nobody proved who collected them.</h2>
+    </div>
+    <div class="stack">
+      <div class="layer"><span class="mono lbl">pay</span><span class="mono via">x402 · MPP</span><p>Money moves per request, in USDC or by card through Stripe. Signed receipts prove a payment happened.</p><span class="mark no">✕ no hand-over</span></div>
+      <div class="layer"><span class="mono lbl">shop</span><span class="mono via">UCP · ACP</span><p>An agent can choose a pickup store at checkout. Neither standard says how collection is proven.</p><span class="mark no">✕ no hand-over</span></div>
+      <div class="layer"><span class="mono lbl">platforms</span><span class="mono via">ordering apps</span><p>Pickup codes exist, but each is a closed app tied to its own accounts and saved cards.</p><span class="mark no">✕ closed</span></div>
+      <div class="layer on"><span class="mono lbl">hand over</span><span class="mono via">agentPickup</span><p>A signed pass the counter scans. It proves the right person collected, and a held card is captured on that scan.</p><span class="mark yes">✓ open</span></div>
     </div>
   </section>
 
-  <section id="how" class="wrap section">
-    <p class="eyebrow">/how</p>
-    <h2>From 402 to hand-over</h2>
-    <p class="sub">What happens on the wire, start to finish.</p>
-    <div class="table">
-      <div class="tr th"><span>#</span><span>Step</span><span>What happens</span><span>On the wire</span></div>
-      <div class="tr"><span class="n">01</span><span class="h">Quote</span><span class="p">The agent creates an order and asks to pay. The price comes from the merchant's catalog, never from the request.</span><span class="chip">402 Payment Required</span></div>
-      <div class="tr"><span class="n">02</span><span class="h">Pay</span><span class="p">USDC over x402 <code>exact</code> today. Holds through <code>auth-capture</code> as facilitators add it. Cards through Stripe are held until the scan.</span><span class="chip">x402 · Stripe</span></div>
-      <div class="tr"><span class="n">03</span><span class="h">Issue</span><span class="p">The pass is an Ed25519 JWS of about 250 bytes, emailed as a QR with a six-letter backup code. Public keys sit at <code>/.well-known</code>.</span><span class="chip">pass.emailed</span></div>
-      <div class="tr"><span class="n">04</span><span class="h">Verify</span><span class="p">Any phone camera or USB scanner reads it. The signature checks offline, and single use is enforced against the merchant's store.</span><span class="chip">sig ok · single use</span></div>
-      <div class="tr"><span class="n">05</span><span class="h">Settle</span><span class="p">The hold is captured on the scan, or released if nobody collects. A signed webhook goes to the platform.</span><span class="chip lime">order.collected</span></div>
+  <!-- ---------- how: sticky lime rail + scrolling steps ---------- -->
+  <section id="how" class="frame band how">
+    <div class="how-rail">
+      <div class="how-sticky">
+        <p class="idx mono">02 / how it works</p>
+        <h2 class="display">From “get me a coffee” to the counter</h2>
+        <ol class="how-nav mono" id="howNav">
+          <li data-step="1"><span>01</span>Find</li>
+          <li data-step="2"><span>02</span>Order</li>
+          <li data-step="3"><span>03</span>Pay</li>
+          <li data-step="4"><span>04</span>Ready</li>
+          <li data-step="5"><span>05</span>Collect</li>
+        </ol>
+      </div>
+    </div>
+    <div class="how-steps">
+      <article class="step" data-step="1">
+        <span class="step-n display">01</span>
+        <h3>Find</h3>
+        <p>Someone asks their agent for a flat white near work. The agent searches the directory for shops near them that sell it, which are open now, and how each one takes payment.</p>
+        <code class="wire">find_shops · GET /directory/v1/shops?q=flat+white&amp;lat=…&amp;lng=…</code>
+      </article>
+      <article class="step" data-step="2">
+        <span class="step-n display">02</span>
+        <h3>Order</h3>
+        <p>The agent orders from the shop's live menu. Prices always come from the menu, never from the request, and the order lands on the venue's Square screens like any other.</p>
+        <code class="wire">create_pickup_order · POST /api/orders</code>
+      </article>
+      <article class="step" data-step="3">
+        <span class="step-n display">03</span>
+        <h3>Pay</h3>
+        <p>USDC over x402 is paid as the order is placed, and can be paid back if nobody collects. A card through Stripe's agent rails is held until the scan. Either way the money goes to the venue, not us.</p>
+        <code class="wire">402 Payment Required → x402 · MPP · Stripe</code>
+      </article>
+      <article class="step" data-step="4">
+        <span class="step-n display">04</span>
+        <h3>Ready</h3>
+        <p>Staff mark it ready on Square or on our scanner. The customer gets a receipt when they pay, and the QR when the order is ready to collect.</p>
+        <code class="wire">order.ready · QR emailed · webhook signed</code>
+      </article>
+      <article class="step" data-step="5">
+        <span class="step-n display">05</span>
+        <h3>Collect</h3>
+        <p>Staff scan the QR with any phone camera. The signature checks offline, the pass works once, and a held card is captured on that scan.</p>
+        <code class="wire">order.collected · sig ok · single use</code>
+      </article>
     </div>
   </section>
 
-  <section id="standards" class="wrap section">
-    <p class="eyebrow">/standards</p>
-    <h2>Speaks every agent checkout</h2>
-    <p class="sub">Whichever way the agent pays, the order ends in the same signed pickup pass. Every path is covered by the test suite.</p>
-    <div class="table std-table">
-      <div class="tr th"><span>Standard</span><span>What agentPickup does</span><span>Endpoint</span></div>
-      <div class="tr"><span class="h">x402</span><span class="p">USDC per order, with bazaar discovery, signed offers and receipts, retry-safe payment ids, and Sign-In-With-X so the paying wallet can fetch its pass again.</span><span class="chip">/api/orders/:id/pay</span></div>
-      <div class="tr"><span class="h">MPP</span><span class="p">Stripe and Tempo's Machine Payments Protocol: card or Link through a Shared Payment Token, straight into the merchant's Stripe.</span><span class="chip">/api/orders/:id/mpp</span></div>
-      <div class="tr"><span class="h">UCP</span><span class="p">Google's Universal Commerce Protocol: checkout with the <code>pickup</code> method, and the pickup pass as the order's link.</span><span class="chip">/.well-known/ucp</span></div>
-      <div class="tr"><span class="h">AP2</span><span class="p">Every checkout is signed by the shop, and the platform's SD-JWT mandate proving the buyer approved those exact terms is verified and kept as evidence.</span><span class="chip">UCP mandates</span></div>
-      <div class="tr"><span class="h">ACP</span><span class="p">OpenAI and Stripe's Agentic Commerce Protocol: checkout sessions with in-store pickup, delegated payment and signed order webhooks.</span><span class="chip">/.well-known/acp.json</span></div>
-      <div class="tr"><span class="h">Visa TAP · Mastercard</span><span class="p">RFC 9421 agent signatures (Trusted Agent Protocol, Agent Pay, Web Bot Auth), checked on every agent payment route.</span><span class="chip lime">signed agents</span></div>
+  <!-- ---------- venues: bento ---------- -->
+  <section id="venues" class="frame band">
+    <div class="band-head">
+      <p class="idx mono">03 / for venues</p>
+      <h2 class="display">Keep your POS. Take orders from every agent.</h2>
+    </div>
+    <div class="bento">
+      <div class="cell cell-connect">
+        <span class="chip lime">square</span>
+        <h3>Connect your Square in two minutes</h3>
+        <ol class="wizard mono">
+          <li><b>✓</b>Sign in with Square</li>
+          <li><b>✓</b>Pick the location agents collect from</li>
+          <li><b>✓</b>Payments: your USDC wallet, or test mode first</li>
+          <li><b>✓</b>Listed where agents look</li>
+        </ol>
+        <a class="btn btn-lime" href="/connect">Connect your Square ↗</a>
+      </div>
+      <div class="cell cell-docket">
+        <h3>Orders on your Square screens</h3>
+        <div class="docket mono" aria-hidden="true">
+          <div class="docket-top"><span>#A7 · agentPickup</span><span>08:38</span></div>
+          <div>2× Flat white</div>
+          <div class="note">for Sam</div>
+          <div class="docket-foot"><span>Paid · USDC</span><span>pickup</span></div>
+        </div>
+        <p>Staff work it like any other ticket. Marking it ready in Square tells the customer.</p>
+      </div>
+      <div class="cell">
+        <h3>Receipt first, QR when it's ready</h3>
+        <p>One email when they pay, another with the QR when it's ready to collect, all in your name and colours.</p>
+      </div>
+      <div class="cell cell-group">
+        <h3>Group orders</h3>
+        <p>One code for the coffee run. Everyone's agent pays its own share, and the counter gets one order.</p>
+        <ul class="shares mono" aria-hidden="true">
+          <li><span>Sam · flat white</span><b>paid</b></li>
+          <li><span>Alex · long black</span><b>paid</b></li>
+          <li><span>Jo · banana bread</span><b>paid</b></li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h3>Listed where agents look</h3>
+        <p>Your shop shows up in the directory and the MCP server. Already take agent payments elsewhere? <a href="/connect">List your shop</a> with one JSON file.</p>
+      </div>
+      <div class="cell cell-money">
+        <b class="display">$0</b>
+        <h3>We never hold your money</h3>
+        <p>USDC goes to your wallet and cards to your Stripe.</p>
+      </div>
     </div>
   </section>
 
-  <section id="spec" class="wrap section spec">
-    <div>
-      <p class="eyebrow">/spec</p>
-      <h2>An open pickup pass</h2>
-      <p class="sub">A small, signed token that any facilitator, wallet or platform can issue and check. It carries no names, items or amounts, so a leaked screenshot gives nothing away.</p>
+  <!-- ---------- builders: tabbed console ---------- -->
+  <section id="builders" class="frame band builders">
+    <div class="builders-copy">
+      <p class="idx mono">04 / for builders</p>
+      <h2 class="display">One server, every way to order</h2>
       <ul class="checks">
-        <li><b>Compact JWS, EdDSA.</b> It fits in a QR that a normal phone camera opens.</li>
-        <li><b>Checkable offline.</b> Keys come from the merchant's JWKS, so a locker or kiosk can verify one with no network.</li>
-        <li><b>Built for x402.</b> It's designed to sit next to x402's offer-and-receipt extension: the receipt proves payment, and the pass proves collection.</li>
-        <li><b>Maps to UCP.</b> The pass fills in the proof of collection that UCP's <code>pickup</code> fulfilment method leaves open.</li>
+        <li><b>An MCP server.</b> Any agent can find shops, order, pay, join a group order and fetch the pass. Ours is hosted at <code>/mcp</code>.</li>
+        <li><b>A fixed x402 address.</b> Order and pay in one call, at a URL the x402 catalogues can list.</li>
+        <li><b>A public directory.</b> Shops near someone that sell what they want, from here and from listed sites.</li>
+        <li><b>Every agent checkout.</b> x402, MPP, UCP and ACP, and Stripe Checkout with the card held until pickup.</li>
+        <li><b>Safe by default.</b> Prices come from the menu, claims are atomic so two scanners can't both hand over, and staff routes sit behind a key.</li>
       </ul>
-      <p class="muted small mono" style="margin-top:18px">format v1 · draft · feedback welcome</p>
     </div>
-    <div class="term">
-      <div class="term-top"><i></i><i></i><i></i><span>pass.jws, decoded</span></div>
-      <pre class="code-block"><code><span class="c">// header</span>
+    <div class="console">
+      <div class="tabs mono" role="tablist" aria-label="Ways to integrate">
+        <button role="tab" id="tab-mcp" aria-controls="pane-mcp" aria-selected="true">MCP</button>
+        <button role="tab" id="tab-x402" aria-controls="pane-x402" aria-selected="false" tabindex="-1">x402 order</button>
+        <button role="tab" id="tab-dir" aria-controls="pane-dir" aria-selected="false" tabindex="-1">Directory</button>
+        <button role="tab" id="tab-lib" aria-controls="pane-lib" aria-selected="false" tabindex="-1">Library</button>
+      </div>
+      <pre class="code-block pane" role="tabpanel" id="pane-mcp" aria-labelledby="tab-mcp" tabindex="0"><code><span class="c"># hosted: nothing to install</span>
+claude mcp add --transport http agentpickup https://agentpickup.app/mcp
+
+<span class="c"># or run it yourself</span>
+claude mcp add agentpickup -- npx -y <span class="s">@agentpickup/mcp</span>
+
+<span class="c"># then just ask</span>
+<span class="k">&gt;</span> get me a flat white near the Valley for 8:15
+
+  find_shops → get_shop → create_pickup_order
+  → pay_order → get_pickup_pass  <span class="s">✓ K7P4QX</span></code></pre>
+      <pre class="code-block pane" role="tabpanel" id="pane-x402" aria-labelledby="tab-x402" tabindex="0" hidden><code><span class="c">// one call: order and pay at an address that never changes</span>
+<span class="k">import</span> { wrapFetchWithPayment } <span class="k">from</span> <span class="s">"@x402/fetch"</span>;
+
+<span class="k">const</span> pay = wrapFetchWithPayment(fetch, client); <span class="c">// the agent's wallet</span>
+<span class="k">const</span> res = <span class="k">await</span> pay(
+  <span class="s">"https://agentpickup.app/api/x402/order?items=flat-white:2&amp;name=Sam"</span>,
+);
+<span class="k">const</span> { order, passUrl } = <span class="k">await</span> res.json();
+<span class="c">// 402 → paid → 200, with the pass in hand</span>
+
+<span class="c">// or POST { items, email, name } and the QR is emailed too</span></code></pre>
+      <pre class="code-block pane" role="tabpanel" id="pane-dir" aria-labelledby="tab-dir" tabindex="0" hidden><code><span class="c"># shops near someone that sell what they want</span>
+curl <span class="s">"https://agentpickup.app/directory/v1/shops?q=flat+white&amp;lat=-27.457&amp;lng=153.034&amp;open_now=true"</span>
+
+{ <span class="s">"shops"</span>: [{
+    <span class="s">"name"</span>: <span class="s">"Demo Café"</span>, <span class="s">"distanceKm"</span>: 0.4, <span class="s">"openNow"</span>: true,
+    <span class="s">"order"</span>: { <span class="s">"via"</span>: <span class="s">"agentpickup"</span> },
+    <span class="s">"source"</span>: { <span class="s">"kind"</span>: <span class="s">"here"</span> } }] }
+
+<span class="c"># already take agent payments? list your shop</span>
+curl -X POST https://agentpickup.app/directory/v1/listings \
+  -d <span class="s">'{"url":"https://yourshop.com/.well-known/agentpickup.json"}'</span></code></pre>
+      <pre class="code-block pane" role="tabpanel" id="pane-lib" aria-labelledby="tab-lib" tabindex="0" hidden><code><span class="c"># npm i @agentpickup/server</span>
+<span class="k">import</span> { createCollect, SqliteStore, resendMailer } <span class="k">from</span> <span class="s">"@agentpickup/server"</span>;
+
+<span class="k">const</span> pickup = createCollect({
+  baseUrl: <span class="s">"https://orders.yourshop.com"</span>,
+  merchant: { name: <span class="s">"Corner Café"</span>, brandColor: <span class="s">"#9a3412"</span>,
+    location: { name: <span class="s">"Front counter"</span> } },
+  catalog,
+  payments: {
+    x402: { payTo: env.WALLET, network: <span class="s">"eip155:8453"</span> },
+    card: { secretKey: env.STRIPE_KEY, captureMode: <span class="s">"hold"</span> },
+  },
+  store: <span class="k">new</span> SqliteStore(<span class="s">"./data/pickup.db"</span>),
+  mailer: resendMailer({ apiKey: env.RESEND_KEY }),
+  onEvent: (e, order) =&gt; platform.notify(e.type, order),
+});
+
+app.route(<span class="s">"/"</span>, pickup.app);</code></pre>
+    </div>
+  </section>
+
+  <!-- ---------- the pass, as a ticket ---------- -->
+  <section id="spec" class="frame band">
+    <div class="spec-ticket">
+      <div class="spec-copy">
+        <p class="idx mono">05 / the pass</p>
+        <h2 class="display">An open pickup pass</h2>
+        <p class="sub">A small signed token any facilitator, wallet or platform can issue and check. It carries no names, items or amounts, so a leaked screenshot gives nothing away.</p>
+        <ul class="checks">
+          <li><b>Compact JWS, EdDSA.</b> It fits in a QR a normal phone camera opens.</li>
+          <li><b>Checkable offline.</b> Keys come from the shop's JWKS, so a locker or kiosk can check one with no network.</li>
+          <li><b>Next to x402's receipts.</b> The receipt proves payment; the pass proves collection.</li>
+          <li><b>Fills UCP's gap.</b> It's the proof of collection UCP's <code>pickup</code> method leaves open.</li>
+        </ul>
+        <p class="muted small mono">format v1 · draft · feedback welcome</p>
+      </div>
+      <div class="spec-stub">
+        <pre class="code-block"><code><span class="c">// header</span>
 { <span class="s">"alg"</span>: <span class="s">"EdDSA"</span>, <span class="s">"kid"</span>: <span class="s">"_Gmp2PH4"</span> }
 
 <span class="c">// payload</span>
 {
   <span class="s">"v"</span>:   1,
-  <span class="s">"oid"</span>: <span class="s">"ord_7HkQ2mXc9aRt"</span>,   <span class="c">// order</span>
-  <span class="s">"pid"</span>: <span class="s">"Ya7qVHjkKI7bn4gU"</span>,   <span class="c">// pass id, single use</span>
-  <span class="s">"exp"</span>: 1793666330           <span class="c">// collect by</span>
+  <span class="s">"oid"</span>: <span class="s">"ord_7HkQ2mXc9aRt"</span>,  <span class="c">// order</span>
+  <span class="s">"pid"</span>: <span class="s">"Ya7qVHjkKI7bn4gU"</span>,  <span class="c">// pass id, single use</span>
+  <span class="s">"exp"</span>: 1793666330          <span class="c">// collect by</span>
 }
 
 <span class="c">// QR content</span>
 https://shop.example/c/&lt;header&gt;.&lt;payload&gt;.&lt;sig&gt;
 
 <span class="c">// keys</span>
-GET /.well-known/collect-keys.json  <span class="c">→ JWKS (Ed25519)</span></code></pre>
+GET /.well-known/collect-keys.json  <span class="c">→ JWKS</span></code></pre>
+      </div>
     </div>
   </section>
 
-  <section id="demo" class="wrap section">
-    <p class="eyebrow">/demo</p>
-    <h2>Run an order end to end</h2>
-    <p class="sub">A pretend café running the library. Pay with the test button, or hit the x402 link and see the real 402 quote. Then scan the pass the way staff would. No real money moves.</p>
+  <!-- ---------- standards wall ---------- -->
+  <section id="standards" class="frame band">
+    <div class="band-head">
+      <p class="idx mono">06 / standards</p>
+      <h2 class="display">Speaks every agent checkout</h2>
+    </div>
+    <div class="wall">
+      <div class="std"><b class="display lc">x402</b><p>USDC per order, with bazaar discovery, signed offers and receipts, retry-safe payment ids, and Sign-In-With-X so the paying wallet can fetch its pass again.</p><span class="chip">/api/x402/order</span></div>
+      <div class="std"><b class="display">MPP</b><p>Stripe and Tempo's Machine Payments Protocol: card or Link through a Shared Payment Token, straight into the shop's Stripe.</p><span class="chip">/api/orders/:id/mpp</span></div>
+      <div class="std"><b class="display">UCP</b><p>Google's Universal Commerce Protocol: checkout with the <code>pickup</code> method, and the pass as the order's link.</p><span class="chip">/.well-known/ucp</span></div>
+      <div class="std"><b class="display">AP2</b><p>Every checkout is signed by the shop, and the platform's mandate proving the buyer approved those exact terms is checked and kept.</p><span class="chip">UCP mandates</span></div>
+      <div class="std"><b class="display">ACP</b><p>OpenAI and Stripe's Agentic Commerce Protocol: checkout sessions with in-store pickup, delegated payment and signed webhooks.</p><span class="chip">/.well-known/acp.json</span></div>
+      <div class="std"><b class="display">TAP</b><p>Visa's Trusted Agent Protocol, Mastercard Agent Pay and Web Bot Auth signatures, checked on every agent payment route.</p><span class="chip lime">signed agents</span></div>
+    </div>
+  </section>
+
+  <!-- ---------- demo ---------- -->
+  <section id="demo" class="frame band">
+    <div class="band-head">
+      <p class="idx mono">07 / demo</p>
+      <h2 class="display">Run an order end to end</h2>
+      <p class="sub">A pretend café on the real server. Pay with the test button, or try the x402 link and see the real 402 quote. Then scan the pass the way staff would. No real money moves.</p>
+    </div>
 
     <div class="demo">
       <div class="term shop">
@@ -165,7 +351,7 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS (Ed25519)</span></c
         <div class="term-top"><i></i><i></i><i></i><span id="flowTitle">order · events</span><span class="live hidden" id="flowLiveDot">● live</span></div>
         <div class="flow-empty" id="flowEmpty">
           <p class="mono">$ waiting for an order<span class="cursor">▍</span></p>
-          <p class="muted small">Add something on the left and pay. The events, the email and the scan will show up here.</p>
+          <p class="muted small">Add something on the left and pay. The events, the email and the scan show up here.</p>
         </div>
         <div id="flowLive" class="hidden">
           <div class="log" id="orderLog"></div>
@@ -185,102 +371,34 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS (Ed25519)</span></c
     </div>
   </section>
 
-  <section id="who" class="wrap section">
-    <p class="eyebrow">/who</p>
-    <h2>Built for the companies that move agent payments</h2>
-    <div class="grid-3">
-      <div class="tile">
-        <span class="chip lime">facilitators · wallets</span>
-        <h3>A real-world use case for agent money</h3>
-        <p>Your agents can already buy API calls. Add physical goods that someone collects in person, with a signed proof of hand-over for disputes and spending policies.</p>
-        <ul class="mini"><li>Issue and check passes in your stack</li><li>Settle when the scan happens, not before</li></ul>
-      </div>
-      <div class="tile">
-        <span class="chip">ordering · POS · delivery</span>
-        <h3>Agent-ready pickup for every merchant</h3>
-        <p>Accept orders from any agent, not just the ones on your app, and give every merchant on your platform the same signed hand-over under your brand.</p>
-        <ul class="mini"><li>White-label scanner and emails</li><li>Courier hand-over doubles as proof of delivery</li></ul>
-      </div>
-      <div class="tile">
-        <span class="chip">developers</span>
-        <h3>Click and collect in an afternoon</h3>
-        <p>Mount one Hono app and get checkout, passes, a scanner and webhooks. SQLite out of the box, or bring your own store.</p>
-        <ul class="mini"><li>Free to self-host, no tracking</li><li>TypeScript on Node 22; swap the store for other runtimes</li></ul>
-      </div>
+  <!-- ---------- start here: one row per audience ---------- -->
+  <section id="who" class="frame band">
+    <div class="band-head">
+      <p class="idx mono">08 / start here</p>
     </div>
-    <div class="chips"><span class="muted mono small">works for</span><span class="chip">cafés</span><span class="chip">retail click &amp; collect</span><span class="chip">couriers</span><span class="chip">events</span><span class="chip">lockers &amp; kiosks</span><span class="chip">rentals &amp; repairs</span></div>
-  </section>
-
-  <section id="developers" class="wrap section dev">
-    <div class="dev-copy">
-      <p class="eyebrow">/developers</p>
-      <h2>One mount, the whole flow</h2>
-      <p class="sub">Checkout, passes, scanner, emails and webhooks, on your domain and under your brand.</p>
-      <ul class="checks">
-        <li><b>Every way agents pay.</b> x402, MPP, UCP and ACP for agents, and Stripe Checkout with the card held until pickup.</li>
-        <li><b>An MCP server.</b> <code>@agentpickup/mcp</code> lets any agent order, pay and fetch the pass. Try ours at <code>/mcp</code>.</li>
-        <li><b>Your brand only.</b> Emails, pass pages and the scanner carry the merchant's name and colours, never ours.</li>
-        <li><b>Events you can act on.</b> Signed webhooks for paid, ready, collected and expired orders.</li>
-        <li><b>Safe by default.</b> Prices come from the catalog, claims are atomic so two scanners can't both hand over, and staff routes sit behind a key.</li>
-      </ul>
-    </div>
-    <div class="term code-term">
-      <div class="term-top"><i></i><i></i><i></i><span>server.ts</span></div>
-      <pre class="code-block"><code><span class="k">import</span> { createCollect, SqliteStore, resendMailer } <span class="k">from</span> <span class="s">"@agentpickup/server"</span>;
-
-<span class="k">const</span> pickup = createCollect({
-  baseUrl: <span class="s">"https://orders.yourshop.com"</span>,
-  merchant: {
-    name: <span class="s">"Corner Café"</span>, brandColor: <span class="s">"#9a3412"</span>,
-    fromEmail: <span class="s">"Corner Café &lt;orders@yourshop.com&gt;"</span>,
-    location: { name: <span class="s">"Front counter"</span> },
-  },
-  catalog,
-  payments: {
-    x402: { payTo: env.WALLET, network: <span class="s">"eip155:8453"</span> },
-    card: { secretKey: env.STRIPE_KEY, captureMode: <span class="s">"hold"</span> },
-  },
-  store: <span class="k">new</span> SqliteStore(<span class="s">"./data/pickup.db"</span>),
-  mailer: resendMailer({ apiKey: env.RESEND_KEY }),
-  signingKeyPem: env.PASS_SIGNING_KEY,
-  staffKey: env.STAFF_KEY,
-  onEvent: (e, order) =&gt; platform.notify(e.type, order),
-});
-
-app.route(<span class="s">"/"</span>, pickup.app);</code></pre>
+    <div class="rows">
+      <a class="row" href="/connect"><b class="display">Venues</b><span>Connect your Square, pick a location and choose how agents pay. Test mode first if you like.</span><i aria-hidden="true">↗</i></a>
+      <a class="row" href="#builders"><b class="display">Agent builders</b><span>Add the MCP server, or call the order address straight from any x402 client.</span><i aria-hidden="true">↓</i></a>
+      <a class="row" href="/wallet"><b class="display">People</b><span>Give your assistant a wallet you fund and limit, for pickup orders and any other x402 service.</span><i aria-hidden="true">↗</i></a>
+      <a class="row" href="#partners"><b class="display">Payment companies</b><span>Facilitators, wallets and ordering platforms: issue and check passes in your own stack.</span><i aria-hidden="true">↓</i></a>
     </div>
   </section>
 
-  <section id="pricing" class="wrap section">
-    <p class="eyebrow">/pricing</p>
-    <h2>An open format, a fair-source server</h2>
-    <p class="sub">The format is open and the library is free to run yourself. We earn when we run it for platforms, and only on completed pickups.</p>
-    <div class="grid-3 pricing">
-      <div class="tile price">
-        <span class="chip">self-host</span>
-        <div class="amount">Free</div>
-        <p>The pass format is Apache-2.0. The server and scanner are source-available under FSL, free to self-host, and turn into Apache-2.0 after two years. Your servers and your keys.</p>
-        <a class="btn btn-outline" href="#partners">Get the code first</a>
-      </div>
-      <div class="tile price featured">
-        <span class="chip lime">hosted for platforms</span>
-        <div class="amount">Per collection</div>
-        <p>We run issuing, scanning and settlement for every merchant on your platform, white-labelled. A small fee per completed pickup, and nothing on no-shows.</p>
-        <a class="btn btn-lime" href="#partners">Talk to us</a>
-      </div>
-      <div class="tile price">
-        <span class="chip">design partners</span>
-        <div class="amount">Free while v1 settles</div>
-        <p>Facilitators and wallets who integrate early help shape the format before it's proposed upstream.</p>
-        <a class="btn btn-outline" href="#partners">Become a partner</a>
-      </div>
+  <!-- ---------- pricing: one statement ---------- -->
+  <section id="pricing" class="frame band pricing">
+    <p class="idx mono">09 / pricing</p>
+    <p class="display price-line">Free during <em>the pilot.</em></p>
+    <div class="price-notes">
+      <p>No fees on orders while we pilot, and at least 30 days' notice before any fee. When fees come, they'll be per completed pickup, never on no-shows.</p>
+      <p>Self-hosting is free. The pass format is Apache-2.0; the server and scanner are source-available under FSL and become Apache-2.0 after two years.</p>
     </div>
   </section>
 
-  <section id="partners" class="wrap section waitlist">
+  <!-- ---------- partners ---------- -->
+  <section id="partners" class="frame band waitlist">
     <div>
-      <p class="eyebrow">/partners</p>
-      <h2>Integrate agentPickup</h2>
+      <p class="idx mono">10 / partners</p>
+      <h2 class="display">Build with us</h2>
       <p class="sub">We're looking for a few facilitators, wallets and ordering platforms to build with first. Tell us what you'd plug it into.</p>
     </div>
     <form id="waitlistForm" class="term wl-form">
@@ -304,10 +422,12 @@ app.route(<span class="s">"/"</span>, pickup.app);</code></pre>
 </main>
 
 <footer class="footer">
-  <div class="wrap footer-inner">
-    <span class="brand small-brand"><i></i><span><span class="dim">agent</span>Pickup <span class="muted">· © 2026 Tokenise Pty Ltd</span></span></span>
-    <span class="muted mono small">Demo Café is a demo: nothing is made or handed over.</span>
-    <nav class="footer-links" aria-label="Legal"><a href="/wallet">Agent wallet</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav>
+  <div class="wrap">
+    <p class="wordmark display" aria-hidden="true"><span>agent</span>Pickup</p>
+    <div class="footer-inner">
+      <span class="muted mono small">© 2026 Tokenise Pty Ltd · Demo Café is a demo: nothing is made or handed over.</span>
+      <nav class="footer-links" aria-label="Legal"><a href="/connect">Connect</a><a href="/wallet">Agent wallet</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav>
+    </div>
   </div>
 </footer>
 <script src="/site.js"></script>

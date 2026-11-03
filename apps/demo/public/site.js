@@ -59,6 +59,45 @@
     setTimeout(() => (btn.textContent = text), 1400);
   };
 
+  // ---------- how it works: light up the step in the middle of the screen ----------
+  (function howSteps() {
+    const steps = [...document.querySelectorAll(".step")];
+    const nav = [...document.querySelectorAll("#howNav li")];
+    if (!steps.length || !("IntersectionObserver" in window)) return;
+    const show = (n) => {
+      steps.forEach((s) => s.classList.toggle("on", s.dataset.step === n));
+      nav.forEach((l) => l.classList.toggle("on", l.dataset.step === n));
+    };
+    const seen = new IntersectionObserver(
+      (entries) => entries.forEach((e) => e.isIntersecting && show(e.target.dataset.step)),
+      { rootMargin: "-45% 0px -45% 0px" },
+    );
+    steps.forEach((s) => seen.observe(s));
+    show("1");
+  })();
+
+  // ---------- builders: code tabs ----------
+  (function tabs() {
+    const list = [...document.querySelectorAll('[role="tab"]')];
+    const select = (tab) =>
+      list.forEach((t) => {
+        const on = t === tab;
+        t.setAttribute("aria-selected", String(on));
+        t.tabIndex = on ? 0 : -1;
+        $(t.getAttribute("aria-controls")).hidden = !on;
+      });
+    list.forEach((t, i) => {
+      t.onclick = () => select(t);
+      t.onkeydown = (e) => {
+        const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        const next = list[(i + d + list.length) % list.length];
+        select(next);
+        next.focus();
+      };
+    });
+  })();
+
   // ---------- demo shop ----------
   let catalog = null;
   let demoAgent = null;
