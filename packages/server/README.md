@@ -30,7 +30,9 @@ const pickup = createCollect({
 
 `createVenueHost` runs many venues on one install, each at `/v/<slug>` with its own menu, payments, staff key
 and Square connector, managed through an admin API with secrets sealed at rest. It also publishes a public
-directory at `/directory/v1/shops`, where agents find shops near someone that sell what they want.
+directory at `/directory/v1/shops`, where agents find shops near someone that sell what they want. With
+`signup`, Square sellers sign themselves up at `/connect` (Sign in with Square) and manage their venue at
+`/seller`; `fxToUsdCents()` lets venues pricing in AUD and other currencies take USDC.
 
 Connectors put orders on the screens staff already use: `squareConnector` for Square POS (menu and the
 venue's logo, address, hours and map position in; paid pickup orders out; ready and collected both ways), and

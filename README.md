@@ -137,6 +137,10 @@ backed by whatever rate source it trusts. It runs once when an x402 order is cre
 fixed on the order (`usdCents`), so the 402 quote, the payment check and any refund all agree. Without it,
 `createCollect` refuses to turn x402 on rather than charge the wrong amount.
 
+`fxToUsdCents()` is a ready rate source: the European Central Bank's daily reference rates through Frankfurter
+(free, no key), kept for an hour, with the last rates serving for up to a day if the source is down. Pass it as
+`payments.x402.toUsdCents`, or to the venue host as `toUsdCents` for every venue.
+
 ### x402 refunds
 
 Set `payments.x402.refunds: { privateKey }` (a wallet holding USDC: `payTo` itself or a separate float) and
@@ -258,6 +262,43 @@ payments it takes, `testOnly` (no real money: test payments or a testnet), and t
 Square venue's position and hours come from Square; others set `merchant.location.lat`, `lng` and
 `openingHours` (`[{ day: 1, open: "07:00", close: "15:00" }]`, Sunday is 0). `listed: false` keeps a venue
 out, and `alsoList` adds shops that aren't venues, such as the install's own.
+
+### Sellers sign themselves up
+
+With `signup` set, the venue host runs a sign-up wizard at `/connect` and a seller page at `/seller`, so a Square
+seller goes live without anyone using the admin API:
+
+```ts
+const host = createVenueHost({
+  // ...
+  signup: {
+    square: {
+      applicationId: process.env.SQUARE_APP_ID!,       // your app in the Square Developer Console
+      applicationSecret: process.env.SQUARE_APP_SECRET!,
+      environment: "production",                      // "sandbox" while testing
+      webhookSignatureKey: process.env.SQUARE_APP_WEBHOOK_KEY, // one subscription for every venue
+    },
+    x402: { network: "eip155:8453", facilitatorUrl: "https://facilitator.payai.network" },
+  },
+  toUsdCents: fxToUsdCents(), // venues pricing in AUD and others can take USDC
+});
+```
+
+1. **Pick your system.** Sign in with Square, or leave an email for another system (listed at `GET /host/v1/requests`).
+2. **Sign in with Square** (OAuth). The seller approves access to their profile, menu, orders and payments. The
+   tokens are sealed with the venue's other secrets and renewed once they're a week old, as Square asks.
+3. **Choose the location.** The venue is created from it, with the menu, logo, address and hours from Square, a
+   staff key, and test payments.
+4. **Payments.** A USDC wallet, or test mode for now.
+5. **Done.** The staff key, shown once, and how orders flow: they appear in Square, staff mark them ready
+   there, and scan the customer's QR to hand over.
+
+Sellers come back to `/seller` with Sign in with Square to change the brand colour, wallet, test mode and
+directory listing, make a new staff key, or disconnect (the last venue revokes Square access too).
+
+In the Square Developer Console, set the OAuth redirect URL to `<baseUrl>/connect/square/callback`, and
+subscribe one webhook at `<baseUrl>/connect/square/webhook` to `order.fulfillment.updated` and
+`oauth.authorization.revoked`: the host passes each event to the venue it belongs to.
 
 Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
 them to your public origin before `pickup.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)

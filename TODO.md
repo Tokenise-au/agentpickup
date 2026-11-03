@@ -78,9 +78,10 @@ connect Square with their own token.
 
 Sellers come back with Sign in with Square to a small page: colour, wallet, listed, pause, disconnect.
 
-- [ ] Square OAuth: state check, tokens sealed like other venue secrets, refreshed before the 30-day expiry, revoked on disconnect
-- [ ] One app-level Square webhook for every venue, routed by location, so new venues get "ready" with no setup
-- [ ] Wizard pages and the seller page; "Integrate it" buttons point at it
+- [x] Square OAuth: state check, tokens sealed like other venue secrets, renewed once a week old (one renewal per seller), revoked when the last venue disconnects; `oauth.authorization.revoked` handled
+- [x] One app-level Square webhook for every venue, routed by location, so new venues get "ready" with no setup
+- [x] Wizard pages and the seller page; "Integrate it" buttons point at it (partner form until sign-up is switched on)
+- [x] `fxToUsdCents`: ECB rates through Frankfurter, so AUD venues can take USDC
 - [ ] Dave: in the Square Developer Console add the redirect URL `https://agentpickup.app/connect/square/callback` (sandbox first) and put the app secret in `.env` (one-page guide)
 - Size: about 4-6 hours, built and tested on the Square sandbox first
 
