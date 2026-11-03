@@ -179,9 +179,10 @@ See [TODO.md](TODO.md) for what's built and what's next.
 
 ## Not done yet
 
-- Card payments: Stripe accepts the library's Checkout Session exactly as it builds it (checked in a Stripe
-  sandbox, 2026-11-03), but hold, capture-on-scan and release haven't yet run against real Stripe, only a
-  stand-in. MPP and UCP/ACP Shared Payment Token charges are the same.
+- Card payments have run against real Stripe in test mode (2026-11-03): Checkout with the 4242 test card,
+  the thanks page confirming the session, the hold (`requires_capture`, nothing taken), the scan capturing
+  it in full, a second scan refused, and a no-show releasing the hold (`canceled`, nothing ever taken).
+  MPP and UCP/ACP Shared Payment Token charges have still only run against a stand-in.
 - Email: the Resend mailer has delivered real pickup emails (the QR email and the "ready" email) through
   the Resend API (2026-11-03, Resend's test sender), and when Resend refuses a send the order carries on
   with the failure recorded.
