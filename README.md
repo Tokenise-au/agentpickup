@@ -179,12 +179,17 @@ See [TODO.md](TODO.md) for what's built and what's next.
 
 ## Not done yet
 
-- Stripe, MPP, UCP/ACP SPT payments and Resend are tested against fakes, not real test keys. x402 is
-  tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its refund
-  authorization passes PayAI's verification.
+- Card payments: Stripe accepts the library's Checkout Session exactly as it builds it (checked in a Stripe
+  sandbox, 2026-11-03), but hold, capture-on-scan and release haven't yet run against real Stripe, only a
+  stand-in. MPP and UCP/ACP Shared Payment Token charges are the same.
+- Email: the Resend mailer has run against the real Resend API, which correctly refused an unverified
+  sender, and the order carried on with the failure recorded. A delivered send from a verified domain is
+  still to do.
+- x402 is tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its
+  refund authorization passes PayAI's verification.
 - Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
   offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, and the AP2
   payment mandate (the PSP's job).
-- Published 0.1.0 on npm: [`@agentpickup/core`](https://www.npmjs.com/package/@agentpickup/core),
+- On npm: [`@agentpickup/core`](https://www.npmjs.com/package/@agentpickup/core),
   [`@agentpickup/server`](https://www.npmjs.com/package/@agentpickup/server) and
   [`@agentpickup/mcp`](https://www.npmjs.com/package/@agentpickup/mcp). `npm run build:packages` builds them.
