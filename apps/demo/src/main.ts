@@ -65,6 +65,8 @@ const collect = createCollect({
     { id: "long-black", name: "Long black", priceCents: 400, description: "Double shot over hot water" },
     { id: "almond-croissant", name: "Almond croissant", priceCents: 550, description: "Baked this morning" },
     { id: "banana-bread", name: "Banana bread", priceCents: 500, description: "Toasted, with butter" },
+    // Cheap enough that a small real-USDC float in the demo agent covers several on-chain orders.
+    { id: "babyccino", name: "Babyccino", priceCents: 50, description: "Frothed milk, a marshmallow on the side" },
   ],
   currency: "usd",
   timeZone: env.TIME_ZONE ?? "Australia/Brisbane",
