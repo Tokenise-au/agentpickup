@@ -25,7 +25,17 @@ async function connect(opts: Partial<PickupMcpOptions> = {}) {
 test("lists the pickup tools and reads the shop", async () => {
   const { client, call } = await connect();
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["create_pickup_order", "get_pickup_pass", "get_shop", "order_status", "pay_order"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), [
+    "close_group_order",
+    "create_pickup_order",
+    "get_pickup_pass",
+    "get_shop",
+    "group_order_status",
+    "join_group_order",
+    "order_status",
+    "pay_order",
+    "start_group_order",
+  ]);
   assert.equal(tools.find((t) => t.name === "get_shop")!.annotations?.readOnlyHint, true);
 
   const shop = await call("get_shop");
@@ -203,5 +213,29 @@ test("the Streamable HTTP handler answers initialize and tools/list", async () =
 
   const list = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const tools = (await list.json()) as { result: { tools: { name: string }[] } };
-  assert.equal(tools.result.tools.length, 5);
+  assert.equal(tools.result.tools.length, 9);
+});
+
+test("group orders through the MCP: start, two agents join and pay, close, and the organiser's QR is on its way", async () => {
+  const { shop, call } = await connect({ payer: walletPayer({ privateKey: generatePrivateKey(), maxPerOrder: "$20", networks: [NETWORK] }) });
+  const started = await call("start_group_order", { organiser_name: "Robin", organiser_email: "robin@example.com", title: "Coffee run" });
+  assert.equal(started.isError, false, started.text);
+  const { code, organiser_key } = started.json;
+  assert.match(started.text, new RegExp(`share code ${code}`));
+
+  const sam = await call("join_group_order", { code, items: [{ id: "flat-white", qty: 1 }], email: "sam@example.com", name: "Sam" });
+  assert.equal(sam.isError, false, sam.text);
+  assert.match(sam.text, /pay it with pay_order/);
+  const paid = await call("pay_order", { order_id: sam.json.orderId });
+  assert.equal(paid.isError, false, paid.text);
+  const alex = await call("join_group_order", { code, items: [{ id: "croissant", qty: 1 }], email: "alex@example.com", name: "Alex" });
+  await call("pay_order", { order_id: alex.json.orderId });
+
+  const status = await call("group_order_status", { code });
+  assert.match(status.text, /Coffee run \(code [A-Z0-9]+\), closes in \d+ min: 2 of 2 paid, \$9\.50 so far\./);
+  assert.equal((await call("close_group_order", { code, organiser_key: "wrong-key" })).isError, true);
+  const closed = await call("close_group_order", { code, organiser_key });
+  assert.match(closed.text, /^Closed: .* The shop has the combined order/);
+  const combined = (await shop.store.listOrders({ statuses: ["paid"], limit: 10 })).find((o) => o.rail === "group")!;
+  assert.deepEqual(combined.items.map((i) => i.note), ["for Sam", "for Alex"]);
 });

@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@agentpickup/core": "^0.2.0",
-    "@agentpickup/mcp": "^0.2.0",
+    "@agentpickup/core": "^0.3.0",
+    "@agentpickup/mcp": "^0.3.0",
     "@agentpickup/server": "^0.7.0",
     "@hono/node-server": "^2.1.6",
     "@x402/core": "2.29.0",

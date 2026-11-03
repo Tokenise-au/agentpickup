@@ -5,7 +5,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { errorOf, usd, type Fetch, type Payer } from "./wallet.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 export interface PickupMcpOptions {
   /** The agentPickup shop this server orders from. */
@@ -53,7 +53,10 @@ const INSTRUCTIONS = `agentPickup lets you buy things online for the user to col
 2. create_pickup_order: needs the user's email, where the shop sends the pickup QR.
 3. pay_order: pays from the configured wallet in USDC over x402. Confirm the items and total with the user first.
 4. Give the user the pass link and pickup code. They show the QR at the counter to collect.
-get_pickup_pass fetches the pass again later; order_status says whether it's ready or collected.`;
+get_pickup_pass fetches the pass again later; order_status says whether it's ready or collected.
+Group orders (a coffee run): start_group_order gives a code to share; each person's agent calls join_group_order and
+pays its own share with pay_order; at closing time the shop gets one combined order and the organiser gets its QR.
+group_order_status shows who's in; close_group_order closes it early.`;
 
 const money = (cents: number, currency: string) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
@@ -327,6 +330,136 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       if (!res.ok) throw new ToolError(await errorOf(res, `The shop answered ${res.status}.`));
       const pass = (await res.json()) as { passUrl: string; pickupCode: string; qrContent: string };
       return reply(`Pickup pass: ${pass.passUrl}, pickup code ${pass.pickupCode}.`, pass);
+    }),
+  );
+
+  // ---------- group orders ----------
+  type GroupView = {
+    code: string;
+    title: string;
+    status: string;
+    organiser: string;
+    closesAt: number;
+    members: { name: string; items: string; totalCents: number; status: string }[];
+    paidCents: number;
+    currency: string;
+    combined: { status: string; collectBy: number } | null;
+  };
+  const closesIn = (g: GroupView) => {
+    const minutes = Math.max(0, Math.round((g.closesAt - Date.now()) / 60_000));
+    return g.status === "open" ? `closes in ${minutes} min` : g.status === "sent" ? "closed and sent to the shop" : "cancelled";
+  };
+  const groupSummary = (g: GroupView) => {
+    const paid = g.members.filter((m) => m.status !== "awaiting_payment" && m.status !== "cancelled");
+    return `${g.title} (code ${g.code}), ${closesIn(g)}: ${paid.length} of ${g.members.length} paid, ${money(g.paidCents, g.currency)} so far.`;
+  };
+
+  server.registerTool(
+    "start_group_order",
+    {
+      title: "Start a group order",
+      description:
+        "Start a group order (a coffee run) at a shop. Returns a code to share: each person's agent joins with it and pays for " +
+        "their own items. When it closes, the shop gets one combined order and the organiser is emailed its pickup QR.",
+      inputSchema: {
+        organiser_name: z.string().min(1).max(60).describe("Who collects, shown to staff"),
+        organiser_email: z.string().email().describe("Where the group's pickup QR goes"),
+        title: z.string().max(60).optional().describe('e.g. "Friday coffee run"'),
+        closes_in_minutes: z.number().int().min(5).max(240).optional().describe("Default 15"),
+        ...shopArg,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    guarded(async (args: { organiser_name: string; organiser_email: string; title?: string; closes_in_minutes?: number; shop_url?: string }) => {
+      const shop = shopFor(args.shop_url);
+      const data = (await call(shop, "/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: args.organiser_name, email: args.organiser_email, title: args.title, closesInMinutes: args.closes_in_minutes }),
+      })) as { group: GroupView; organiserKey: string };
+      return reply(
+        `Started ${data.group.title}: share code ${data.group.code}. Everyone's agent joins with join_group_order and the code; it ${closesIn(data.group)}. ` +
+          `Keep organiser_key to close it early.`,
+        { shop, code: data.group.code, closesAt: data.group.closesAt, organiser_key: data.organiserKey },
+      );
+    }),
+  );
+
+  server.registerTool(
+    "join_group_order",
+    {
+      title: "Join a group order",
+      description:
+        "Add the user's items to a group order with its code. Returns the order id; pay it with pay_order before the group closes. " +
+        "The organiser collects everything, so the user gets a receipt, not a QR.",
+      inputSchema: {
+        code: z.string().min(4).max(12).describe("The group's code"),
+        items: z.array(z.object({ id: z.string().describe("Item id from get_shop"), qty: z.number().int().min(1).max(20) })).min(1),
+        email: z.string().email().describe("The user's email, for their receipt"),
+        name: z.string().min(1).max(60).describe("The user's name, shown to staff on their items"),
+        ...shopArg,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    guarded(async (args: { code: string; items: { id: string; qty: number }[]; email: string; name: string; shop_url?: string }) => {
+      const shop = shopFor(args.shop_url);
+      const { payments } = (await call(shop, "/api/catalog")) as { payments: { x402?: unknown; test?: boolean } };
+      const rail = payments.x402 ? "x402" : payments.test ? "test" : null;
+      if (!rail) throw new ToolError("This shop doesn't take agent payments.");
+      const data = (await call(shop, `/api/groups/${encodeURIComponent(args.code)}/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: args.items, email: args.email, name: args.name, rail }),
+      })) as { order: Order; group: GroupView; next: { type: string; url?: string } };
+      const what = `${data.order.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}, ${money(data.order.totalCents, data.order.currency)}`;
+      return reply(
+        rail === "test"
+          ? `Added to ${data.group.title}: ${what}, paid with a test payment (no money moved). ${data.group.organiser} collects it.`
+          : `Added to ${data.group.title}: ${what}. Confirm with the user, then pay it with pay_order (order ${data.order.id}) before the group closes.`,
+        { shop, orderId: data.order.id, group: groupSummary(data.group), payUrl: data.next.url ?? null, test: rail === "test" },
+      );
+    }),
+  );
+
+  server.registerTool(
+    "group_order_status",
+    {
+      title: "Check a group order",
+      description: "Who's in a group order, what they ordered, who has paid, and whether it has closed and been collected.",
+      inputSchema: { code: z.string().min(4).max(12), ...shopArg },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    guarded(async (args: { code: string; shop_url?: string }) => {
+      const shop = shopFor(args.shop_url);
+      const { group } = (await call(shop, `/api/groups/${encodeURIComponent(args.code)}`)) as { group: GroupView };
+      return reply(
+        groupSummary(group) + (group.combined ? ` The shop's order is ${group.combined.status}.` : ""),
+        group,
+      );
+    }),
+  );
+
+  server.registerTool(
+    "close_group_order",
+    {
+      title: "Close a group order now",
+      description: "Close a group order early, as its organiser. Unpaid shares are left out; the shop gets the rest as one order.",
+      inputSchema: { code: z.string().min(4).max(12), organiser_key: z.string().min(8), ...shopArg },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    guarded(async (args: { code: string; organiser_key: string; shop_url?: string }) => {
+      const shop = shopFor(args.shop_url);
+      const { group } = (await call(shop, `/api/groups/${encodeURIComponent(args.code)}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organiserKey: args.organiser_key }),
+      })) as { group: GroupView };
+      return reply(
+        group.status === "sent"
+          ? `Closed: ${groupSummary(group)} The shop has the combined order, and ${group.organiser}'s pickup QR is on its way by email.`
+          : `Closed with nobody paid, so the group order was cancelled.`,
+        group,
+      );
     }),
   );
 

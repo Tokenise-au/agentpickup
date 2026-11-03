@@ -20,6 +20,7 @@ import {
 } from "@agentpickup/core";
 import type { CatalogItem, CollectConfig, MerchantProfile } from "./config.js";
 import { listingOf, type ShopListing } from "./directory.js";
+import { createGroups, GroupError } from "./groups.js";
 import { mountConnect } from "./connect.js";
 import type { ConnectorContext, ShopProfile } from "./connectors/types.js";
 import { paymentSummary, renderPassEmail, type PassEmailKind } from "./mail.js";
@@ -216,6 +217,8 @@ export function createCollect(config: CollectConfig) {
   async function sendPassEmail(order: Order, kind: PassEmailKind) {
     if (!order.customerEmail) return;
     const withQr = kind !== "receipt";
+    // A share of a group order: the receipt says whose run it is; the organiser collects with the group's QR.
+    const group = await groups.memberOf(order.id);
     const common = {
       order,
       merchant,
@@ -224,6 +227,7 @@ export function createCollect(config: CollectConfig) {
       payment: paymentSummary(order, { x402Network: x402?.network }),
       timeZone,
       poweredBy: config.poweredBy,
+      ...(group ? { group: { title: group.title, organiser: group.organiser.name } } : {}),
     };
     const preview = renderPassEmail({ ...common, qrSrc: withQr ? await qrDataUri(order) : "" });
     await store.saveEmail({ id: newId("eml"), orderId: order.id, to: order.customerEmail, subject: preview.subject, html: preview.html, at: Date.now() });
@@ -351,17 +355,26 @@ export function createCollect(config: CollectConfig) {
       customerEmail: existing.customerEmail ?? payment.email ?? null,
     });
     if (!order) return (await store.getOrder(orderId))!;
-    await emit("order.paid", order, { paymentRef: payment.paymentRef, payer: payment.payer ?? undefined, ...payment.meta });
+    // A share of a group order reaches the shop only inside the group's combined order.
+    const group = await groups.memberOf(order.id);
+    await emit("order.paid", order, {
+      paymentRef: payment.paymentRef,
+      payer: payment.payer ?? undefined,
+      ...payment.meta,
+      ...(group ? { groupMember: group.id } : {}),
+    });
     // Where staff or the POS mark orders ready, the QR waits for that email.
-    await sendPassEmail(order, qrWhenReady ? "receipt" : "paid");
+    await sendPassEmail(order, group ? "receipt" : qrWhenReady ? "receipt" : "paid");
     return order;
   }
 
   async function markReady(orderId: string) {
+    if (await groups.memberOf(orderId)) throw new InputError("This is part of a group order: mark the group's order ready.", 409);
     const order = await store.transition(orderId, ["paid"], "ready", { readyAt: Date.now() });
     if (!order) throw new InputError("Only paid orders can be marked ready.", 409);
     await emit("order.ready", order);
     await sendPassEmail(order, "ready");
+    await groups.followCombined(order, "ready");
     return order;
   }
 
@@ -416,6 +429,15 @@ export function createCollect(config: CollectConfig) {
     const resolved = await resolveScan(scan);
     if ("error" in resolved) return { ok: false as const, ...resolved.error };
     const before = resolved.order;
+    const group = await groups.memberOf(before.id);
+    if (group) {
+      return {
+        ok: false as const,
+        status: 409 as const,
+        title: "Part of a group order",
+        detail: `This is in ${group.title}. ${group.organiser.name} collects it with the group's QR.`,
+      };
+    }
     const reason = blockedReason(before);
     if (reason) return { ok: false as const, status: 409 as const, title: "Can't hand over", detail: reason };
     // Claim the order first so two scanners can't both hand it over.
@@ -432,9 +454,12 @@ export function createCollect(config: CollectConfig) {
       }
     }
     await emit("order.collected", claimed, { captured });
+    await groups.followCombined(claimed, "collected");
     const amount = formatMoney(claimed.totalCents, claimed.currency);
     const message = captured
       ? `${amount} taken from the card hold.`
+      : claimed.rail === "group"
+        ? `${amount} group order: each person paid their own share.`
       : claimed.rail === "x402" || claimed.rail === "mpp" || claimed.rail === "ucp" || claimed.rail === "acp"
         ? `${amount} was paid by agent at order time.`
         : claimed.rail === "card"
@@ -445,6 +470,8 @@ export function createCollect(config: CollectConfig) {
 
   async function sweep() {
     const now = Date.now();
+    // Group orders whose time is up become their combined order first.
+    await groups.sweep(now).catch((err) => console.error("[collect] closing group orders failed:", err));
     for (const o of await store.listExpirable(now)) {
       try {
         if (o.status === "awaiting_payment") {
@@ -566,10 +593,33 @@ export function createCollect(config: CollectConfig) {
   );
 
   app.onError((err, c) => {
-    if (err instanceof InputError) return c.json({ error: err.message }, err.status);
+    if (err instanceof InputError || err instanceof GroupError) return c.json({ error: err.message }, err.status);
     console.error("[collect]", err);
     return c.json({ error: "Something went wrong." }, 500);
   });
+
+  // ---------- group orders ----------
+  const groups = createGroups({
+    store,
+    base,
+    currency,
+    windowMs,
+    rails: { x402: Boolean(x402), test: Boolean(config.payments.test) },
+    createOrder,
+    markPaid,
+    emit,
+    emailCombined: (o) => sendPassEmail(o, qrWhenReady ? "receipt" : "paid"),
+    freshPickupCode,
+    passUrl,
+    publicOrder,
+  });
+  groups.routes(app);
+  /** Staff and platforms see a group's combined order, not each person's share of it. */
+  async function withoutShares(orders: Order[]) {
+    const kept: Order[] = [];
+    for (const o of orders) if (!(await store.getDoc("group-of", o.id))) kept.push(o);
+    return kept;
+  }
 
   // ---------- connectors ----------
   const connectors = config.connectors ?? [];
@@ -679,7 +729,7 @@ export function createCollect(config: CollectConfig) {
       return syncCatalog();
     },
     clearCatalog,
-    listOrders: async (statuses) => await store.listOrders({ statuses, limit: 200 }),
+    listOrders: async (statuses) => await withoutShares(await store.listOrders({ statuses, limit: 200 })),
     view: platformView,
   });
 
@@ -942,7 +992,17 @@ export function createCollect(config: CollectConfig) {
   app.get("/p/:passId", async (c) => {
     const order = await store.getOrderByPassId(c.req.param("passId"));
     if (!order) return c.html(messagePage(merchant, "Pass not found", "Check the link in your email."), 404);
-    return c.html(passPage({ order, merchant, qrDataUri: await qrDataUri(order), timeZone, readySoon: qrWhenReady }));
+    const group = await groups.memberOf(order.id);
+    return c.html(
+      passPage({
+        order,
+        merchant,
+        qrDataUri: await qrDataUri(order),
+        timeZone,
+        readySoon: qrWhenReady,
+        ...(group ? { group: { title: group.title, organiser: group.organiser.name } } : {}),
+      }),
+    );
   });
 
   // Where the QR points. Staff phones (signed in on /staff) land on the hand-over
@@ -1028,7 +1088,7 @@ export function createCollect(config: CollectConfig) {
   });
 
   app.get("/api/staff/orders", staffOnly, async (c) =>
-    c.json({ orders: (await store.listOrders({ statuses: ["paid", "ready"], limit: 50 })).map(staffView) }),
+    c.json({ orders: (await withoutShares(await store.listOrders({ statuses: ["paid", "ready"], limit: 50 }))).map(staffView) }),
   );
 
   const timer = setInterval(() => void sweep(), 60_000);

@@ -87,7 +87,7 @@ export function profileFromSquare(l: SquareLocation): ShopProfile {
   };
 }
 
-const EXTERNAL_TYPE: Record<string, string> = { x402: "CRYPTO", card: "CARD", mpp: "CARD", ucp: "CARD", acp: "CARD", test: "OTHER" };
+const EXTERNAL_TYPE: Record<string, string> = { x402: "CRYPTO", card: "CARD", mpp: "CARD", ucp: "CARD", acp: "CARD", test: "OTHER", group: "OTHER" };
 
 export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
   const host = cfg.environment === "production" ? "https://connect.squareup.com" : "https://connect.squareupsandbox.com";
@@ -172,11 +172,13 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
         location_id: cfg.locationId,
         reference_id: order.id,
         source: { name: "agentPickup" },
-        line_items: order.items.map((i) =>
-          squareIds.has(i.id)
+        line_items: order.items.map((i) => ({
+          ...(squareIds.has(i.id)
             ? { catalog_object_id: i.id, quantity: String(i.qty) }
-            : { name: i.name, quantity: String(i.qty), base_price_money: { amount: i.unitCents, currency } },
-        ),
+            : { name: i.name, quantity: String(i.qty), base_price_money: { amount: i.unitCents, currency } }),
+          // A group order's lines say whose each one is.
+          ...(i.note ? { note: i.note.slice(0, 2000) } : {}),
+        })),
         fulfillments: [
           {
             type: "PICKUP",
@@ -266,6 +268,8 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     fetchProfile: cfg.syncProfile === false ? undefined : fetchProfile,
 
     async onEvent(event, order, ctx) {
+      // One person's share of a group order arrives inside the group's combined order instead.
+      if (event.type === "order.paid" && event.data?.groupMember) return;
       if (event.type === "order.paid") await sendOrder(order, ctx);
       else if (event.type === "order.ready") await advance(order, "PREPARED", ctx);
       else if (event.type === "order.collected") await advance(order, "COMPLETED", ctx);

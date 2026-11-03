@@ -1,5 +1,8 @@
-/** How the order was paid: card checkout, x402, MPP, or through an agent checkout protocol (UCP, ACP). */
-export type PaymentRail = "card" | "x402" | "mpp" | "ucp" | "acp" | "test";
+/**
+ * How the order was paid: card checkout, x402, MPP, or through an agent checkout protocol (UCP, ACP). "group" is a
+ * group order's combined order: each person paid their own share, as an order of their own.
+ */
+export type PaymentRail = "card" | "x402" | "mpp" | "ucp" | "acp" | "test" | "group";
 
 /**
  * awaiting_payment → paid → (ready) → collected
@@ -16,6 +19,8 @@ export interface OrderItem {
   name: string;
   qty: number;
   unitCents: number;
+  /** Shown to staff beside the item, e.g. "for Sam" on a group order's combined order. */
+  note?: string;
 }
 
 export interface Order {

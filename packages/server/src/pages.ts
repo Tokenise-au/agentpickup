@@ -64,7 +64,7 @@ ${scripts.map((s) => `<script src="${esc(s)}"></script>`).join("")}
 
 function itemsTable(order: Order): string {
   const rows = order.items
-    .map((i) => `<tr><td>${i.qty} × ${esc(i.name)}</td><td>${formatMoney(i.qty * i.unitCents, order.currency)}</td></tr>`)
+    .map((i) => `<tr><td>${i.qty} × ${esc(i.name)}${i.note ? ` <span class="muted">(${esc(i.note)})</span>` : ""}</td><td>${formatMoney(i.qty * i.unitCents, order.currency)}</td></tr>`)
     .join("");
   return `<table>${rows}<tr class="total"><td>Total</td><td>${formatMoney(order.totalCents, order.currency)}</td></tr></table>`;
 }
@@ -89,9 +89,11 @@ export function passPage(o: {
   timeZone?: string;
   /** The shop emails when an order is ready: say so while it's being made. */
   readySoon?: boolean;
+  /** A share of a group order: the organiser collects with the group's QR, so this pass shows none. */
+  group?: { title: string; organiser: string };
 }): string {
   const { order, merchant } = o;
-  const live = order.status === "paid" || order.status === "ready";
+  const live = (order.status === "paid" || order.status === "ready") && !o.group;
   const preparing = o.readySoon && order.status === "paid";
   const body = `
 <div class="card" style="text-align:center">
@@ -102,7 +104,10 @@ export function passPage(o: {
          ${preparing ? `<p class="muted">We'll email you when it's ready. Show this code at the counter to collect.</p>` : ""}
          <img class="qr" src="${o.qrDataUri}" alt="Pickup QR code">
          <div class="label">Pickup code</div><div class="code">${esc(order.pickupCode ?? "")}</div>`
-      : order.status === "collected"
+      : o.group && (order.status === "paid" || order.status === "ready")
+        ? `<h1 style="margin-top:10px">Part of ${esc(o.group.title)}</h1>
+           <p class="muted">${esc(o.group.organiser)} collects everything with the group's QR.</p>`
+        : order.status === "collected"
         ? `<h1 style="margin-top:10px">Collected. Enjoy!</h1><p class="muted">Picked up ${esc(formatTime(order.collectedAt ?? Date.now(), o.timeZone))}</p>`
         : `<h1 style="margin-top:10px">This pass can't be used</h1><p class="muted">Contact ${esc(merchant.supportEmail ?? merchant.name)} if that's unexpected.</p>`
   }

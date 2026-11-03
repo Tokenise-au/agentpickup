@@ -507,3 +507,31 @@ test("square: with a webhook, staff marking it ready in Square sends the QR afte
   assert.match(ready.subject, /^Ready to collect: /);
   assert.match(ready.html, /alt="Pickup QR code"/);
 });
+
+test("square: a group order reaches Square once, as one pickup order with each line marked for whom", async () => {
+  const { square, shop } = squareShop();
+  await shop.collect.ready;
+  const started = (await (await shop.post("/api/groups", { name: "Robin", email: "robin@example.com", title: "Coffee run" })).json()) as {
+    group: { code: string };
+    organiserKey: string;
+  };
+  for (const [name, id] of [["Sam", "VAR_FW_REG"], ["Alex", "VAR_CR"]]) {
+    const res = await shop.post(`/api/groups/${started.group.code}/orders`, { items: [{ id, qty: 1 }], email: `${name}@example.com`, name, rail: "test" });
+    assert.equal(res.status, 201, await res.clone().text());
+  }
+  await shop.collect.flushConnectors();
+  assert.equal(square.orders.size, 0, "shares don't reach Square on their own");
+  await shop.post(`/api/groups/${started.group.code}/close`, { organiserKey: started.organiserKey });
+  await shop.collect.flushConnectors();
+  assert.equal(square.orders.size, 1);
+  const [sq] = [...square.orders.values()];
+  assert.deepEqual(
+    sq.line_items.map((l) => [l.catalog_object_id, (l as { note?: string }).note]),
+    [
+      ["VAR_FW_REG", "for Sam"],
+      ["VAR_CR", "for Alex"],
+    ],
+  );
+  assert.equal((sq.fulfillments[0].pickup_details as { recipient: { display_name: string } }).recipient.display_name, "Coffee run (Robin)");
+  assert.equal((square.payments[0] as { amount_money: { amount: number } }).amount_money.amount, 520 + 600);
+});

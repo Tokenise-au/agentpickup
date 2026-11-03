@@ -163,6 +163,8 @@ export interface PassEmailInput {
   kind: PassEmailKind;
   /** How it was paid, from paymentSummary(). */
   payment?: PaymentSummary;
+  /** The order is one person's share of a group order, which the organiser collects. */
+  group?: { title: string; organiser: string };
   timeZone?: string;
   poweredBy?: { label: string; url: string };
 }
@@ -196,6 +198,8 @@ export function paymentSummary(order: Order, opts: { x402Network?: string } = {}
       return { label: "Through your agent" };
     case "test":
       return { label: "Test payment: no money moved" };
+    case "group":
+      return { label: "Each person paid their own share" };
     default:
       return { label: String(order.rail) };
   }
@@ -225,10 +229,15 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
       lead: `Your order is waiting at ${where}. Show this code to collect it.`,
     },
   }[kind];
+  if (input.group && kind === "receipt") {
+    copy.subject = `Receipt: your part of ${input.group.title}`;
+    copy.heading = "Thanks, you're in";
+    copy.lead = `Your order is part of ${input.group.title}. ${input.group.organiser} collects everything from ${where}.`;
+  }
   const rows = order.items
     .map(
       (i) => `<tr>
-        <td style="padding:6px 0;color:#111827">${i.qty} × ${esc(i.name)}</td>
+        <td style="padding:6px 0;color:#111827">${i.qty} × ${esc(i.name)}${i.note ? ` <span style="color:#6b7280">(${esc(i.note)})</span>` : ""}</td>
         <td style="padding:6px 0;color:#111827;text-align:right">${formatMoney(i.unitCents * i.qty, order.currency)}</td>
       </tr>`,
     )
@@ -304,7 +313,7 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
     "",
     ...(withQr ? [`Pickup code: ${order.pickupCode ?? ""}`, `Your pass, with the QR code: ${passUrl}`] : [`Track your order: ${passUrl}`]),
     "",
-    ...order.items.map((i) => `${i.qty} x ${i.name}  ${formatMoney(i.unitCents * i.qty, order.currency)}`),
+    ...order.items.map((i) => `${i.qty} x ${i.name}${i.note ? ` (${i.note})` : ""}  ${formatMoney(i.unitCents * i.qty, order.currency)}`),
     `Total  ${formatMoney(order.totalCents, order.currency)}`,
     ...(isReceipt
       ? [
