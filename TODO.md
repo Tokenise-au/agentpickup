@@ -38,7 +38,8 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 ## Roadmap to production
 
 - [ ] Phase 0: domain (Dave), privacy page (public repo, npm 0.1.0 and testnet wallets done)
-- [ ] Phase 1: Stripe test then live, x402 on Base mainnet (payTo set to Dave's wallet `0x2fAB…6875`; needs a mainnet facilitator such as CDP's), real email, no-show refunds for agent payments, AUD
+- [x] x402 on Base mainnet: the demo pays real USDC through PayAI into Dave's wallet `0x2fAB…6875`. First settled order 2026-11-03: $0.50 babyccino, tx `0xef1dd9a0…6bc2` (block 53445148)
+- [ ] Phase 1: Stripe test then live, real email, no-show refunds for agent payments, AUD
 - [ ] Phase 2: Postgres store, staff accounts, signing-key rotation, monitoring, backups, docs site
 - [ ] Phase 3: publish the pickup-pass spec and get facilitator review
 - [ ] Phase 4: hosted multi-tenant for platforms (Stripe Connect, dashboard, billing, legal)
