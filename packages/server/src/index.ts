@@ -18,7 +18,9 @@ import {
   type OrderItem,
   type PaymentRail,
 } from "@agentpickup/core";
-import type { CollectConfig, MerchantProfile } from "./config.js";
+import type { CatalogItem, CollectConfig, MerchantProfile } from "./config.js";
+import { mountConnect } from "./connect.js";
+import type { ConnectorContext } from "./connectors/types.js";
 import { renderPassEmail } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
 import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
@@ -44,6 +46,9 @@ export type { AgentSignatureConfig } from "./agent-signatures.js";
 export type { SptStripeConfig } from "./rails/spt.js";
 export { SqliteStore, type MaybePromise, type Store, type StoredEmail } from "./store.js";
 export { PostgresStore, type PostgresStoreOptions, type Queryable } from "./postgres.js";
+export { parseCatalog, type ConnectConfig } from "./connect.js";
+export type { ConnectorContext, PickupConnector } from "./connectors/types.js";
+export { squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
 export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
 
 const UNPAID_TIMEOUT_MS = 60 * 60_000;
@@ -102,7 +107,29 @@ export function createCollect(config: CollectConfig) {
     );
   }
   const x402Refunder = x402 ? createX402Refunder(x402, base) : null;
-  const catalog = new Map(config.catalog.map((item) => [item.id, item]));
+  // The menu: the shop's own config, until a platform pushes or syncs one (kept in the store).
+  let menu = config.catalog;
+  let menuById = new Map(menu.map((item) => [item.id, item]));
+  const useMenu = (items: CatalogItem[]) => {
+    menu = items;
+    menuById = new Map(items.map((item) => [item.id, item]));
+  };
+  const menuReady = Promise.resolve()
+    .then(() => store.getDoc<{ items: CatalogItem[] }>("catalog", "menu"))
+    .then((saved) => {
+      if (saved?.items?.length) useMenu(saved.items);
+    })
+    .catch((err) => console.error("[collect] loading the saved menu failed:", err));
+  async function setCatalog(items: CatalogItem[]) {
+    await menuReady;
+    await store.putDoc("catalog", "menu", { items, updatedAt: Date.now() });
+    useMenu(items);
+  }
+  async function clearCatalog() {
+    await menuReady;
+    await store.putDoc("catalog", "menu", { items: [], updatedAt: Date.now() });
+    useMenu(config.catalog);
+  }
 
   const staffToken = config.staffKey
     ? createHmac("sha256", config.staffKey).update("collect-staff-v1").digest("base64url")
@@ -182,8 +209,9 @@ export function createCollect(config: CollectConfig) {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError("That email doesn't look right.");
     if (!email && rail !== "card") throw new InputError("An email is needed to send the pickup QR.");
 
+    await menuReady;
     const items: OrderItem[] = input.items.map(({ id, qty }) => {
-      const product = catalog.get(id);
+      const product = menuById.get(id);
       if (!product) throw new InputError(`Unknown item ${id}.`);
       if (!Number.isInteger(qty) || qty < 1 || qty > 20) throw new InputError("Quantities must be 1 to 20.");
       return { id, name: product.name, qty, unitCents: product.priceCents };
@@ -444,7 +472,7 @@ export function createCollect(config: CollectConfig) {
   const lookupThrottle = createFailureThrottle({ max: 12, windowMs: 10 * 60_000 });
 
   const app = new Hono();
-  for (const path of ["/api/*", "/ucp/*", "/acp/*"]) {
+  for (const path of ["/api/*", "/ucp/*", "/acp/*", "/connect/*"]) {
     app.use(path, bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }));
   }
   for (const path of ["/p/*", "/c/*", "/staff", "/staff/*", "/orders/*", "/api/staff/*", "/api/orders/:id/pass"]) {
@@ -468,7 +496,7 @@ export function createCollect(config: CollectConfig) {
     c.json(
       openApiDocument({
         merchant,
-        catalog: config.catalog,
+        catalog: menu,
         currency,
         rails: { card: Boolean(card), x402: Boolean(x402), mpp: Boolean(mpp), test: Boolean(config.payments.test) },
       }),
@@ -481,19 +509,91 @@ export function createCollect(config: CollectConfig) {
     return c.json({ error: "Something went wrong." }, 500);
   });
 
-  app.get("/api/catalog", (c) =>
-    c.json({
+  // ---------- connectors ----------
+  const connectors = config.connectors ?? [];
+  const ctxFor = (name: string): ConnectorContext => ({
+    baseUrl: base,
+    currency,
+    getOrder: async (id) => await store.getOrder(id),
+    markReady: (id) => markReady(id),
+    setCatalog,
+    link: async (orderId, externalId, data = {}) => {
+      await store.putDoc(`link:${name}`, orderId, { ...data, externalId });
+      await store.putDoc(`link:${name}:ext`, externalId, { orderId });
+    },
+    linked: async (orderId) => (await store.getDoc<{ externalId: string } & Record<string, unknown>>(`link:${name}`, orderId)) ?? null,
+    orderFor: async (externalId) => (await store.getDoc<{ orderId: string }>(`link:${name}:ext`, externalId))?.orderId ?? null,
+  });
+  // Each connector hears events in order per order, off the payment path, with two retries.
+  const pending = new Map<string, Promise<void>>();
+  const retry = async (fn: () => Promise<void>) => {
+    for (const wait of [0, 1000, 4000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      try {
+        return await fn();
+      } catch (err) {
+        if (wait === 4000) throw err;
+      }
+    }
+  };
+  for (const connector of connectors) {
+    if (!connector.onEvent) continue;
+    const ctx = ctxFor(connector.name);
+    eventHooks.push(async (event, order) => {
+      const key = `${connector.name}:${order.id}`;
+      const run = (pending.get(key) ?? Promise.resolve())
+        .then(() => retry(() => connector.onEvent!(event, order, ctx)))
+        .catch((err) => console.error(`[collect] ${connector.name}: ${event.type} for ${order.id} failed:`, err));
+      pending.set(key, run);
+      void run.finally(() => {
+        if (pending.get(key) === run) pending.delete(key);
+      });
+    });
+  }
+  /** Wait until every connector has handled the events so far (tests, graceful shutdown). */
+  async function flushConnectors() {
+    while (pending.size) await Promise.allSettled([...pending.values()]);
+  }
+  async function syncCatalog() {
+    const synced: { connector: string; items: number }[] = [];
+    for (const connector of connectors) {
+      if (!connector.fetchCatalog) continue;
+      const items = await connector.fetchCatalog(ctxFor(connector.name));
+      if (items.length) await setCatalog(items);
+      synced.push({ connector: connector.name, items: items.length });
+    }
+    return synced;
+  }
+  const ready = menuReady
+    .then(() => (connectors.some((c) => c.fetchCatalog) ? syncCatalog() : []))
+    .then(() => undefined)
+    .catch((err) => console.error("[collect] syncing the menu failed:", err));
+  // What a POS or ordering platform needs to make an order: no email address.
+  const platformView = (o: Order) => ({ ...publicOrder(o), customerName: o.customerName, pickupCode: o.pickupCode });
+  mountConnect(app, {
+    connect: config.connect,
+    connectors,
+    ctxFor,
+    syncCatalog,
+    clearCatalog,
+    listOrders: async (statuses) => await store.listOrders({ statuses, limit: 200 }),
+    view: platformView,
+  });
+
+  app.get("/api/catalog", async (c) => {
+    await menuReady;
+    return c.json({
       merchant: { name: merchant.name, brandColor: merchant.brandColor, logoUrl: merchant.logoUrl, location: merchant.location },
       currency,
-      items: config.catalog,
+      items: menu,
       payments: {
         card: Boolean(card),
         x402: x402 ? { network: x402.network ?? "eip155:84532", payTo: x402.payTo } : null,
         mpp: mpp ? { methods: ["stripe"], intent: "charge", currency } : null,
         test: Boolean(config.payments.test),
       },
-    }),
-  );
+    });
+  });
 
   app.post("/api/orders", async (c, next) => {
     // Idempotency-Key: a retried create returns the first response instead of a second order.
@@ -714,7 +814,9 @@ export function createCollect(config: CollectConfig) {
   const protocolCore: ProtocolCore = {
     store,
     merchant,
-    catalog: config.catalog,
+    get catalog() {
+      return menu;
+    },
     currency,
     base,
     testPayments: Boolean(config.payments.test),
@@ -837,6 +939,10 @@ export function createCollect(config: CollectConfig) {
     collect,
     sweep,
     refundX402,
+    /** Settles once a saved or synced menu is loaded. */
+    ready,
+    syncCatalog,
+    flushConnectors,
     passUrl,
     collectLink,
     stop: () => clearInterval(timer),

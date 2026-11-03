@@ -7,6 +7,8 @@ import type { Ap2Config } from "./ap2.js";
 import type { AgentSignatureConfig } from "./agent-signatures.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
+import type { PickupConnector } from "./connectors/types.js";
+import type { ConnectConfig } from "./connect.js";
 
 /** Everything a shopper or staff member sees comes from here, never from us. */
 export interface MerchantProfile {
@@ -72,6 +74,13 @@ export interface X402RailConfig {
 export interface CollectConfig {
   /** Public origin the QR links point at, e.g. "https://orders.yourshop.com". */
   baseUrl: string;
+  /**
+   * Systems the venue already runs (a POS such as Square, an ordering platform). Paid orders appear on
+   * their screens, their menu becomes this shop's menu, and status flows back.
+   */
+  connectors?: PickupConnector[];
+  /** The connector API at /connect/v1, for platforms that integrate directly. */
+  connect?: ConnectConfig;
   merchant: MerchantConfig;
   catalog: CatalogItem[];
   /** ISO currency the catalog is priced in. x402 settles in USDC: see payments.x402.toUsdCents for other currencies. */
