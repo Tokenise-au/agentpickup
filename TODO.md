@@ -55,6 +55,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Square location as the venue's profile: logo, address, hours, contact details, time zone, map position; the shop's own settings win; hourly refresh, last copy kept
 - [x] Agent directory `/directory/v1/shops` on the venue host: search by item, place, distance and open now; `listed`, `alsoList`
 - [x] MCP `find_shops`, ordering from any venue on the same host, test shops order with no money moving (MCP 0.2.0)
+- [x] Group orders (2026-11-04): each person's agent pays its own share to the shop; at closing the paid shares become one combined order (each line "for <name>"), sent to Square once, QR to the organiser; ready, collected and expiry follow to every share. MCP `start_group_order` / `join_group_order` / `group_order_status` / `close_group_order`. Checked live on the Square sandbox: one order, lines "for Sam" and "for Alex"
 - [ ] Doshii and Deliverect connectors (need partner API access)
 - [ ] Square payments for people's cards (stays on hold: agent card payments run on Stripe today)
 

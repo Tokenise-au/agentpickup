@@ -53,8 +53,9 @@ real goods need that raised.
 
 `@agentpickup/mcp` lets any MCP client find agentPickup shops and order from them: `find_shops` (near a
 point, in a suburb, or selling something, from the [directory](#agent-directory)), `get_shop`,
-`create_pickup_order`, `pay_order` (x402 from a wallet you configure, with a spend cap), `order_status` and
-`get_pickup_pass` (Sign-In-With-X). The demo hosts it at `/mcp`, searching every venue there and paying the
+`create_pickup_order`, `pay_order` (x402 from a wallet you configure, with a spend cap), `order_status`,
+`get_pickup_pass` (Sign-In-With-X), and [group orders](#group-orders) (`start_group_order`, `join_group_order`,
+`group_order_status`, `close_group_order`). The demo hosts it at `/mcp`, searching every venue there and paying the
 Demo Café with the demo agent's wallet:
 
 ```json
@@ -113,6 +114,24 @@ Every email has a plain-text part, and replies go to the shop's `supportEmail`. 
 
 A failed send never blocks an order: it's recorded on the order's `pass.emailed` event, with the provider's
 message id when it went through.
+
+### Group orders
+
+A coffee run for a team: one person starts a group order with a closing time, everyone's agent adds their own
+items and pays for them (x402, or test payments at a test shop), straight to the shop. At closing time the shop
+gets one combined order, each line marked "for Sam", and the organiser gets its pickup QR. Unpaid shares are left
+out, and agentPickup never holds anyone's money: each share is an ordinary paid order.
+
+| Route | What |
+|---|---|
+| `POST /api/groups` | Start one: `{ name, email, title?, closesInMinutes? }` (5-240, default 15). Returns the code to share and an `organiserKey` |
+| `GET /api/groups/:code` | Who's in, what they ordered, who has paid; names only, never emails |
+| `POST /api/groups/:code/orders` | Join: `{ items, email, name, rail }`. An x402 share comes back with its pay link |
+| `POST /api/groups/:code/close` | Close early with `{ organiserKey }`; otherwise it closes at its time |
+
+Shares get a receipt, not a QR, and stay off the staff list and the POS. The combined order goes to Square once;
+marking it ready, handing it over or its expiry carry every share with it, refunds included. The MCP server has
+`start_group_order`, `join_group_order`, `group_order_status` and `close_group_order`.
 
 ### Storage
 

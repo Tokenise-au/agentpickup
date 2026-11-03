@@ -14,6 +14,10 @@ show at the counter to collect.
 | `pay_order` | Pays the order's x402 link from your wallet and returns the pass link. With no wallet set up, returns the price and pay link instead |
 | `order_status` | Waiting for payment, paid, ready, collected or expired |
 | `get_pickup_pass` | Fetches the pass link, pickup code and QR again by signing in as the paying wallet (Sign-In-With-X) |
+| `start_group_order` | Starts a group order (a coffee run) with a closing time; returns the code to share and a key to close it early |
+| `join_group_order` | Adds the user's items to a group order by its code; pay the share with `pay_order` before it closes |
+| `group_order_status` | Who's in, what they ordered, who has paid, and whether the shop's order is ready or collected |
+| `close_group_order` | Closes a group order early, as its organiser; the shop gets one combined order and the organiser its QR |
 
 ## Use it
 
