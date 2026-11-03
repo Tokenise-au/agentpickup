@@ -115,12 +115,8 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [ ] Privacy policy, terms and support pages on agentpickup.app
 - [ ] Apply for a listing; Square reviews apps before they're listed (check the current requirements and timing first)
 
-## Roadmap to production
+## Roadmap
 
-- [ ] Phase 0: domain (Dave), privacy page (public repo, npm 0.1.0 and testnet wallets done)
-- [x] x402 on Base mainnet: the demo pays real USDC through PayAI into Dave's wallet `0x2fAB…6875`. First settled order 2026-11-03: $0.50 babyccino, tx `0xef1dd9a0…6bc2` (block 53445148)
-- [ ] Phase 1: Stripe test then live, real email, no-show refunds for agent payments, AUD
-- [ ] Phase 2: Postgres store, staff accounts, signing-key rotation, monitoring, backups, docs site
-- [ ] Phase 3: publish the pickup-pass spec and get facilitator review
-- [ ] Phase 4: hosted multi-tenant for platforms (Stripe Connect, dashboard, billing, legal)
-- [ ] Phase 5: pilot with a payments partner and a platform, then launch
+The phases, sizes and order are in [ROADMAP.md](ROADMAP.md) (2026-11-03). It replaces the earlier phases 0-5,
+whose finished parts are ticked above: the domain, Stripe in test mode, real email, x402 on Base mainnet,
+no-show refunds for agent payments, AUD shops and the Postgres store.
