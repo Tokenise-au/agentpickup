@@ -50,7 +50,7 @@ export { parseCatalog, type ConnectConfig } from "./connect.js";
 export type { ConnectorContext, PickupConnector } from "./connectors/types.js";
 export { squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
 export { createVenueHost, type VenueHostConfig, type VenueInput } from "./venues.js";
-export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
+export { cappedMailer, cloudflareMailer, resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
 
 const UNPAID_TIMEOUT_MS = 60 * 60_000;
 const STAFF_COOKIE = "collect_staff";
@@ -183,6 +183,8 @@ export function createCollect(config: CollectConfig) {
           to: order.customerEmail,
           subject: mail.subject,
           html: mail.html,
+          text: mail.text,
+          ...(merchant.supportEmail ? { replyTo: merchant.supportEmail } : {}),
           attachments: [{ filename: "pickup-qr.png", content: await qrPng(order), contentId: "pickup-qr" }],
         });
       }

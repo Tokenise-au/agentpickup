@@ -76,6 +76,11 @@ export interface VenueHostConfig {
   allowOpenStaff?: boolean;
   /** For tests, or a proxy: the fetch Square connectors use. */
   fetch?: typeof fetch;
+  /**
+   * Send every venue's email from this address on your own verified domain ("orders@yourplatform.com"),
+   * under the venue's name; replies go to the venue's supportEmail.
+   */
+  sendFrom?: string;
 }
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -174,10 +179,13 @@ export function createVenueHost(cfg: VenueHostConfig) {
     const secrets = box.open<VenueSecrets>(record.sealed);
     const s = record.settings;
     const x402 = s.payments?.x402;
+    const merchant = cfg.sendFrom
+      ? { ...s.merchant, fromEmail: `"${s.merchant.name.replace(/["<>]/g, "")}" <${cfg.sendFrom}>` }
+      : s.merchant;
     return createCollect({
       ...cfg.shared,
       baseUrl: `${base}${prefix}/${record.slug}`,
-      merchant: s.merchant,
+      merchant,
       catalog: s.catalog ?? [],
       currency: s.currency,
       timeZone: s.timeZone ?? cfg.shared?.timeZone,

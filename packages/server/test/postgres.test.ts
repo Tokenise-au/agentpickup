@@ -22,6 +22,7 @@ await import("./currency.test.js");
 await import("./refunds.test.js");
 await import("./square.test.js");
 await import("./venues.test.js");
+await import("./mail.test.js");
 after(() => closeTestDb());
 
 const order = (id: string): Order => ({

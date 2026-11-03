@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateSigningKeyPem, newId } from "@agentpickup/core";
 import { createMcpHandler, walletPayer } from "@agentpickup/mcp";
-import { createCollect, createVenueHost, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
+import { cappedMailer, cloudflareMailer, createCollect, createVenueHost, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { createDemoAgent, DEMO_NETWORKS, TESTNET } from "./demo-agent.js";
 
@@ -38,7 +38,16 @@ function ap2Key(): string {
 }
 
 const store = new SqliteStore(join(dataDir, "collect.db"));
-const mailer = env.RESEND_API_KEY ? resendMailer({ apiKey: env.RESEND_API_KEY }) : outboxMailer();
+// Real email through Cloudflare Email Sending (or Resend), from orders@agentpickup.app. It's a public demo, so
+// sends are capped per address and per day; without a key, emails only show on the page.
+const sender = env.MAIL_SENDER || "orders@agentpickup.app";
+const delivering =
+  env.CLOUDFLARE_EMAIL_TOKEN && env.CLOUDFLARE_ACCOUNT_ID
+    ? cloudflareMailer({ accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_EMAIL_TOKEN })
+    : env.RESEND_API_KEY
+      ? resendMailer({ apiKey: env.RESEND_API_KEY })
+      : null;
+const mailer = delivering ? cappedMailer(delivering, { perRecipientPerDay: 3, perDay: 100 }) : outboxMailer();
 
 // The demo's wallets. On Base Sepolia the café's own address is the payTo, so it can hand test USDC back
 // to the agent. On Base mainnet, payments go to X402_PAY_TO (the owner's wallet): the café key, which sits
@@ -56,7 +65,7 @@ const collect = createCollect({
   merchant: {
     name: "Demo Café",
     brandColor: "#9a3412",
-    fromEmail: env.MAIL_FROM ?? "Demo Café <orders@example.com>",
+    fromEmail: env.MAIL_FROM ?? `Demo Café <${sender}>`,
     supportEmail: env.SUPPORT_EMAIL,
     shopUrl: `${baseUrl}/#demo`,
     location: { name: "Demo Café counter", address: "A demo shop: nothing here is real", hours: "Open whenever you are" },
@@ -251,6 +260,7 @@ const venueHost =
         store: new SqliteStore(join(dataDir, "venues.db")),
         storeFor: (slug) => new SqliteStore(join(dataDir, "venues", `${slug}.db`)),
         mailer,
+        sendFrom: sender,
         secretKey: env.VENUE_SECRET,
         adminKeys: [env.VENUE_ADMIN_KEY],
         shared: { exposeEmailPreview: true, agentSignatures: { mode: "log" }, collectWindowMinutes: 120 },
@@ -305,7 +315,8 @@ function withPublicOrigin(req: Request): Request {
 
 serve({ fetch: (req) => app.fetch(withPublicOrigin(req)), port }, () => {
   const rails = [env.STRIPE_SECRET_KEY && "card (Stripe)", x402PayTo && "x402", "test"].filter(Boolean).join(", ");
-  console.log(`agentPickup demo on ${baseUrl}  · payments: ${rails} · mail: ${env.RESEND_API_KEY ? "Resend" : "preview only"}`);
+  const mail = env.CLOUDFLARE_EMAIL_TOKEN ? "Cloudflare" : env.RESEND_API_KEY ? "Resend" : "preview only";
+  console.log(`agentPickup demo on ${baseUrl}  · payments: ${rails} · mail: ${mail}`);
   if (demoAgent) console.log(`demo agent ${demoAgent.address} pays ${demoAgent.cafeAddress ?? x402PayTo} on ${x402Network}`);
   void demoAgent?.refill();
 });
