@@ -55,8 +55,65 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Square location as the venue's profile: logo, address, hours, contact details, time zone, map position; the shop's own settings win; hourly refresh, last copy kept
 - [x] Agent directory `/directory/v1/shops` on the venue host: search by item, place, distance and open now; `listed`, `alsoList`
 - [x] MCP `find_shops`, ordering from any venue on the same host, test shops order with no money moving (MCP 0.2.0)
-- [ ] Doshii and Deliverect connectors (need partner access); Square OAuth, payments and App Marketplace on hold
 - [ ] Doshii and Deliverect connectors (need partner API access)
+- [ ] Square payments for people's cards (stays on hold: agent card payments run on Stripe today)
+
+## Next: sellers sign themselves up (planned 2026-11-03, not started)
+
+**Where it stands.** A seller can't sign up by themselves yet. Venues are created by us through the admin API,
+with a Square access token pasted in and the Square webhook registered by hand. agentPickup is not in the
+Square App Marketplace, and the only Square connection is the sandbox venue. Today people find it through
+agentpickup.app, npm, the MCP Registry (agents) and the directory; developers can self-host the library and
+connect Square with their own token.
+
+**Connect wizard at agentpickup.app/connect** (both "Integrate it" buttons open it instead of the partner form):
+
+1. Pick your system. Square works; Lightspeed, Toast, Clover, Shopify POS, Doshii and Deliverect are
+   "request it" options that save to the partner list (each needs its own partner access).
+2. Sign in with Square (OAuth): the seller approves access to menu, orders and business profile; no password
+   reaches us.
+3. Choose the location. The venue is created from it; menu, logo, address and hours come from Square.
+4. Payments (below).
+5. Done: shop link, staff page, how it shows in the directory. Staff keep marking orders ready in Square.
+
+Sellers come back with Sign in with Square to a small page: colour, wallet, listed, pause, disconnect.
+
+- [ ] Square OAuth: state check, tokens sealed like other venue secrets, refreshed before the 30-day expiry, revoked on disconnect
+- [ ] One app-level Square webhook for every venue, routed by location, so new venues get "ready" with no setup
+- [ ] Wizard pages and the seller page; "Integrate it" buttons point at it
+- [ ] Dave: in the Square Developer Console add the redirect URL `https://agentpickup.app/connect/square/callback` (sandbox first) and put the app secret in `.env` (one-page guide)
+- Size: about 4-6 hours, built and tested on the Square sandbox first
+
+**Payments step.** Money always goes straight to the seller, never through us.
+
+| Payment | Who pays this way | Seller needs | Per venue today |
+|---|---|---|---|
+| USDC over x402 | Agents with their own wallet | A wallet address | Yes |
+| Card (Stripe Checkout, held until pickup) | People | Their own Stripe | Only by pasting a secret key into the API |
+| Stripe agent payments (MPP, ACP for ChatGPT, UCP for Google) | Agents paying with the user's card or Link | Their own Stripe | No: built for single shops only |
+| Test mode | Trying it | Nothing | Yes, on by default |
+
+- [ ] Decide: include Connect with Stripe in the wizard, or ship USDC-only first
+- [ ] Stripe Connect: "Connect with Stripe" in the wizard, charges on the seller's own account, an application fee per collected order (how we earn), per-venue card and agent payments. About 4-6 hours more
+- [ ] Dave: turn on Stripe Connect (test mode first) and accept the Connect terms; ask Stripe for MPP access
+- [ ] Before building: confirm in Stripe's docs that Shared Payment Tokens charge on a connected account (SPT charges have only run against a stand-in so far)
+
+**Scaling the hosted install** (agentpickup.app as it runs today):
+
+- One Railway instance with SQLite files on a volume (a venue list plus one file per venue). Each venue runs in
+  that process with its own timers. Fine for a handful to low hundreds of venues; it can't run a second
+  instance, because a venue added on one wouldn't start on the other.
+- [ ] Move the venue host and venue stores to Postgres (`PostgresStore` exists), make venue changes reach
+      every instance, and run the timed jobs (no-show sweep, Square resync) on one instance only
+- [ ] Monitoring and alerts, database backups, staff accounts instead of one shared staff key per venue
+- [ ] Email quota: Cloudflare is at 200 a day for now, and the demo caps itself at 100
+- [ ] x402 facilitator: PayAI's keyless tier covers 1,000 settlements, then needs an account
+
+**Getting into the Square App Marketplace** (after the wizard):
+
+- [ ] A production Square app with OAuth (the wizard)
+- [ ] Privacy policy, terms and support pages on agentpickup.app
+- [ ] Apply for a listing; Square reviews apps before they're listed (check the current requirements and timing first)
 
 ## Roadmap to production
 
