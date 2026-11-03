@@ -3,7 +3,7 @@
 // and passes status back, so agent orders arrive where staff already work.
 import type { Hono } from "hono";
 import type { CollectEvent, Order } from "@agentpickup/core";
-import type { CatalogItem } from "../config.js";
+import type { CatalogItem, PickupLocation } from "../config.js";
 
 export interface ConnectorContext {
   baseUrl: string;
@@ -20,11 +20,25 @@ export interface ConnectorContext {
   orderFor(externalId: string): Promise<string | null>;
 }
 
+/** What a platform knows about the venue. It fills in whatever the shop's own settings leave out. */
+export interface ShopProfile {
+  name?: string;
+  logoUrl?: string;
+  supportEmail?: string;
+  shopUrl?: string;
+  phone?: string;
+  /** IANA zone, e.g. "Australia/Sydney". */
+  timeZone?: string;
+  location?: Partial<PickupLocation>;
+}
+
 export interface PickupConnector {
   /** Short, URL-safe name: "square". Routes mount at /connect/<name>/. */
   name: string;
   /** Pull the venue's menu from the platform. Runs at start and on POST /connect/v1/catalog/sync. */
   fetchCatalog?(ctx: ConnectorContext): Promise<CatalogItem[]>;
+  /** Pull the venue's name, logo, address, hours and map position. Runs at start, hourly and on sync. */
+  fetchProfile?(ctx: ConnectorContext): Promise<ShopProfile>;
   /** React to an order event: send a paid order to the venue's screens, close it out when collected. */
   onEvent?(event: CollectEvent, order: Order, ctx: ConnectorContext): Promise<void>;
   /** Routes the platform calls back on, such as a webhook receiver, under /connect/<name>/. */

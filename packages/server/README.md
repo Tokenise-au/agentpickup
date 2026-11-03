@@ -29,14 +29,17 @@ const pickup = createCollect({
 ```
 
 `createVenueHost` runs many venues on one install, each at `/v/<slug>` with its own menu, payments, staff key
-and Square connector, managed through an admin API with secrets sealed at rest.
+and Square connector, managed through an admin API with secrets sealed at rest. It also publishes a public
+directory at `/directory/v1/shops`, where agents find shops near someone that sell what they want.
 
-Connectors put orders on the screens staff already use: `squareConnector` for Square POS (menu in, paid
-pickup orders out, ready and collected both ways), and a connector API at `/connect/v1` any other platform
-can integrate against.
+Connectors put orders on the screens staff already use: `squareConnector` for Square POS (menu and the
+venue's logo, address, hours and map position in; paid pickup orders out; ready and collected both ways), and
+a connector API at `/connect/v1` any other platform can integrate against.
 
-Email goes through `cloudflareMailer` (Cloudflare Email Sending) or `resendMailer`, with a plain-text part,
-reply-to the shop, and `cappedMailer` for public demos.
+The first email is a receipt. With `qrEmail: "when-ready"` the pickup QR follows when the order is marked
+ready (or after `qrFallbackMinutes`); by default it's in the receipt. Email goes through `cloudflareMailer`
+(Cloudflare Email Sending) or `resendMailer`, with a plain-text part, reply-to the shop, and `cappedMailer`
+for public demos.
 
 Storage is `SqliteStore` (one file) or `PostgresStore` (any pg-style client: `pg`, Neon, Supabase), or
 your own `Store`. Shops priced in other currencies take x402 through `payments.x402.toUsdCents`, and

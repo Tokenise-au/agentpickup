@@ -1,10 +1,12 @@
 // Many venues on one install: each venue is a full agentPickup shop at <baseUrl>/v/<slug>, with its own
 // name, menu, payments, staff key and connectors, added and changed through an admin API. Venue secrets
 // (card, Square and staff keys, the refund wallet, the pass-signing key) are sealed with AES-256-GCM
-// before they reach the store, so the database never holds them in the clear.
+// before they reach the store, so the database never holds them in the clear. Listed venues appear in the
+// public directory at /directory/v1/shops, where agents find shops near someone that sell what they want.
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { cors } from "hono/cors";
 import { generateSigningKeyPem } from "@agentpickup/core";
 import type { CatalogItem, CollectConfig, MerchantConfig } from "./config.js";
 import type { Mailer } from "./mail.js";
@@ -12,6 +14,7 @@ import type { Store } from "./store.js";
 import { parseCatalog } from "./connect.js";
 import { squareConnector } from "./connectors/square.js";
 import { createCollect } from "./index.js";
+import { searchDirectory, type DirectoryQuery, type ShopListing } from "./directory.js";
 
 /** What a platform sends to create or change a venue. Secret fields are write-only. */
 export interface VenueInput {
@@ -21,6 +24,11 @@ export interface VenueInput {
   timeZone?: string;
   collectWindowMinutes?: number;
   noShowPolicy?: "release" | "keep";
+  /** When the pickup QR is emailed. Default "when-ready" for a venue whose Square webhook is set up, else "with-receipt". */
+  qrEmail?: "with-receipt" | "when-ready";
+  qrFallbackMinutes?: number;
+  /** Show the venue in the public directory. Default true. */
+  listed?: boolean;
   payments?: {
     test?: boolean;
     x402?: { payTo: string; network?: `${string}:${string}`; facilitatorUrl?: string; refundPrivateKey?: string | null };
@@ -81,6 +89,8 @@ export interface VenueHostConfig {
    * under the venue's name; replies go to the venue's supportEmail.
    */
   sendFrom?: string;
+  /** Other shops to show in the directory alongside the venues, such as the install's own shop. */
+  alsoList?: { listing(): Promise<ShopListing> }[];
 }
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -134,6 +144,8 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
   }
   if (v.square && (typeof v.square.locationId !== "string" || !v.square.locationId)) throw new VenueError("square.locationId is required.");
   if (v.payments?.x402 && typeof v.payments.x402.payTo !== "string") throw new VenueError("payments.x402.payTo is required.");
+  if (v.qrEmail !== undefined && v.qrEmail !== "with-receipt" && v.qrEmail !== "when-ready") throw new VenueError('qrEmail must be "with-receipt" or "when-ready".');
+  checkLocation(m.location);
 
   const secrets: Partial<Record<keyof VenueSecrets, string | null>> = {};
   const take = (name: keyof VenueSecrets, value: string | null | undefined) => {
@@ -154,6 +166,9 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
     ...(v.timeZone ? { timeZone: v.timeZone } : {}),
     ...(v.collectWindowMinutes ? { collectWindowMinutes: v.collectWindowMinutes } : {}),
     ...(v.noShowPolicy ? { noShowPolicy: v.noShowPolicy } : {}),
+    ...(v.qrEmail ? { qrEmail: v.qrEmail } : {}),
+    ...(v.qrFallbackMinutes ? { qrFallbackMinutes: v.qrFallbackMinutes } : {}),
+    ...(v.listed === false ? { listed: false } : {}),
     payments: {
       ...(v.payments?.test ? { test: true } : {}),
       ...(v.payments?.x402 ? { x402: { payTo: v.payments.x402.payTo, network: v.payments.x402.network, facilitatorUrl: v.payments.x402.facilitatorUrl } } : {}),
@@ -163,6 +178,23 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
     ...(v.webhook ? { webhook: { url: v.webhook.url } } : {}),
   };
   return { settings, secrets };
+}
+
+/** Coordinates and opening hours a venue sets by hand (a Square venue gets them from Square). */
+function checkLocation(location: VenueInput["merchant"]["location"]) {
+  if (!location) return;
+  const { lat, lng, openingHours } = location;
+  if ((lat !== undefined || lng !== undefined) && !(typeof lat === "number" && Math.abs(lat) <= 90 && typeof lng === "number" && Math.abs(lng) <= 180)) {
+    throw new VenueError("merchant.location needs both lat (-90 to 90) and lng (-180 to 180).");
+  }
+  if (openingHours !== undefined) {
+    const time = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const ok =
+      Array.isArray(openingHours) &&
+      openingHours.length <= 50 &&
+      openingHours.every((p) => Number.isInteger(p?.day) && p.day >= 0 && p.day <= 6 && time.test(p.open) && time.test(p.close));
+    if (!ok) throw new VenueError('merchant.location.openingHours is a list of { day: 0-6 (Sunday 0), open: "07:00", close: "15:00" }.');
+  }
 }
 
 export function createVenueHost(cfg: VenueHostConfig) {
@@ -191,6 +223,9 @@ export function createVenueHost(cfg: VenueHostConfig) {
       timeZone: s.timeZone ?? cfg.shared?.timeZone,
       collectWindowMinutes: s.collectWindowMinutes ?? cfg.shared?.collectWindowMinutes,
       noShowPolicy: s.noShowPolicy ?? cfg.shared?.noShowPolicy,
+      // Square tells us when staff mark an order ready, so the QR can wait for that.
+      qrEmail: s.qrEmail ?? (s.square && secrets.squareWebhookKey ? "when-ready" : "with-receipt"),
+      qrFallbackMinutes: s.qrFallbackMinutes,
       store: cfg.storeFor(record.slug),
       mailer: cfg.mailer,
       signingKeyPem: secrets.signingKeyPem,
@@ -294,6 +329,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
       running: live.has(record.slug),
       ...(failed.has(record.slug) ? { error: failed.get(record.slug) } : {}),
       settings: record.settings,
+      listed: record.settings.listed !== false,
       secretsSet: secrets
         ? {
             staffKey: Boolean(secrets.staffKey),
@@ -342,6 +378,38 @@ export function createVenueHost(cfg: VenueHostConfig) {
   });
   app.route("/host/v1", admin);
 
+  // ---------- the public directory ----------
+  /** Every listed venue (and alsoList shop) that's running. */
+  async function listings(): Promise<ShopListing[]> {
+    await ready;
+    const shops: ShopListing[] = [];
+    for (const extra of cfg.alsoList ?? []) shops.push(await extra.listing());
+    for (const slug of await index()) {
+      const venue = live.get(slug);
+      const record = venue ? await recordOf(slug) : null;
+      if (venue && record && record.settings.listed !== false) shops.push(await venue.listing());
+    }
+    return shops;
+  }
+  const num = (v: string | undefined) => (v === undefined || v === "" ? undefined : Number(v));
+  app.use("/directory/*", cors({ origin: "*", allowMethods: ["GET"] }));
+  app.get("/directory/v1/shops", async (c) => {
+    const query: DirectoryQuery = {
+      q: c.req.query("q")?.slice(0, 100),
+      place: c.req.query("place")?.slice(0, 100),
+      lat: num(c.req.query("lat")),
+      lng: num(c.req.query("lng")),
+      radiusKm: num(c.req.query("radius_km")),
+      openNow: c.req.query("open_now") === "true",
+      limit: num(c.req.query("limit")),
+    };
+    const bad = (["lat", "lng", "radiusKm", "limit"] as const).find((k) => query[k] !== undefined && !Number.isFinite(query[k]));
+    if (bad) return c.json({ error: `${bad} must be a number.` }, 400);
+    if ((query.lat === undefined) !== (query.lng === undefined)) return c.json({ error: "Send lat and lng together." }, 400);
+    const shops = searchDirectory(await listings(), query);
+    return c.json({ shops, count: shops.length });
+  });
+
   // ---------- each venue at <prefix>/<slug> ----------
   const toVenue = async (c: { req: { param: (k: string) => string | undefined; raw: Request } }) => {
     await ready;
@@ -356,6 +424,8 @@ export function createVenueHost(cfg: VenueHostConfig) {
     ready,
     upsertVenue,
     removeVenue,
+    /** The directory's shops, before any search. */
+    listings,
     /** The running shop for a venue, for jobs that need it (sweeps run on their own). */
     venue: (slug: string) => live.get(slug) ?? null,
     stop() {

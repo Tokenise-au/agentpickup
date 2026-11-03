@@ -2,11 +2,13 @@
 // Square as a pickup order with the payment recorded as taken outside Square; marking it ready in Square
 // tells agentPickup (which emails the customer); scanning the QR completes it in Square. Square won't
 // cancel an order once a payment is recorded, so a no-show cancels the pickup, records a refund when the
-// money actually went back, and closes the order.
+// money actually went back, and closes the order. The venue's Square location supplies its logo, address,
+// opening hours, contact details and map position.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Order } from "@agentpickup/core";
-import type { CatalogItem } from "../config.js";
-import type { ConnectorContext, PickupConnector } from "./types.js";
+import type { CatalogItem, OpeningPeriod } from "../config.js";
+import { formatHours } from "../directory.js";
+import type { ConnectorContext, PickupConnector, ShopProfile } from "./types.js";
 
 export interface SquareConnectorConfig {
   /** A Square access token for the seller (a sandbox token while testing). */
@@ -17,6 +19,8 @@ export interface SquareConnectorConfig {
   environment?: "sandbox" | "production";
   /** Pull the menu from Square at start. Default true. */
   syncCatalog?: boolean;
+  /** Fill in the venue's logo, address, hours and contact details from the Square location. Default true. */
+  syncProfile?: boolean;
   /**
    * Square → agentPickup status. Subscribe to order.fulfillment.updated in the Square Developer Console at
    * <baseUrl>/connect/square/webhook and paste the subscription's signature key here.
@@ -40,6 +44,48 @@ const PICKUP_STEPS = ["PROPOSED", "RESERVED", "PREPARED", "COMPLETED"];
 /** No-show outcomes where agentPickup gave the money back at expiry. A USDC refund that settles later
  * arrives as its own order.refunded event. */
 const RETURNED_AT_EXPIRY = new Set(["hold_released", "refunded"]);
+
+const DAYS: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
+
+type SquareLocation = {
+  name?: string;
+  business_name?: string;
+  business_email?: string;
+  website_url?: string;
+  phone_number?: string;
+  logo_url?: string;
+  full_format_logo_url?: string;
+  timezone?: string;
+  coordinates?: { latitude?: number; longitude?: number };
+  address?: { address_line_1?: string; address_line_2?: string; locality?: string; administrative_district_level_1?: string; postal_code?: string };
+  business_hours?: { periods?: { day_of_week?: string; start_local_time?: string; end_local_time?: string }[] };
+};
+
+/** A Square location as an agentPickup profile. */
+export function profileFromSquare(l: SquareLocation): ShopProfile {
+  const a = l.address ?? {};
+  const town = [a.locality, a.administrative_district_level_1, a.postal_code].filter(Boolean).join(" ");
+  const address = [a.address_line_1, a.address_line_2, town].filter(Boolean).join(", ");
+  const openingHours: OpeningPeriod[] = (l.business_hours?.periods ?? [])
+    .filter((p) => p.day_of_week && p.day_of_week in DAYS && p.start_local_time && p.end_local_time)
+    .map((p) => ({ day: DAYS[p.day_of_week!], open: p.start_local_time!.slice(0, 5), close: p.end_local_time!.slice(0, 5) }));
+  const lat = l.coordinates?.latitude;
+  const lng = l.coordinates?.longitude;
+  return {
+    name: l.business_name || l.name,
+    logoUrl: l.full_format_logo_url || l.logo_url || undefined,
+    supportEmail: l.business_email || undefined,
+    shopUrl: l.website_url || undefined,
+    phone: l.phone_number || undefined,
+    timeZone: l.timezone || undefined,
+    location: {
+      name: l.name || l.business_name,
+      ...(address ? { address } : {}),
+      ...(openingHours.length ? { openingHours, hours: formatHours(openingHours) } : {}),
+      ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}),
+    },
+  };
+}
 
 const EXTERNAL_TYPE: Record<string, string> = { x402: "CRYPTO", card: "CARD", mpp: "CARD", ucp: "CARD", acp: "CARD", test: "OTHER" };
 
@@ -209,9 +255,15 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     });
   }
 
+  async function fetchProfile(): Promise<ShopProfile> {
+    const { location } = await call<{ location: SquareLocation }>("GET", `/v2/locations/${encodeURIComponent(cfg.locationId)}`);
+    return profileFromSquare(location);
+  }
+
   return {
     name: "square",
     fetchCatalog: cfg.syncCatalog === false ? undefined : fetchCatalog,
+    fetchProfile: cfg.syncProfile === false ? undefined : fetchProfile,
 
     async onEvent(event, order, ctx) {
       if (event.type === "order.paid") await sendOrder(order, ctx);

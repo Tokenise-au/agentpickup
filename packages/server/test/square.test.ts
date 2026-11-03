@@ -62,6 +62,26 @@ class FakeSquare {
     { type: "ITEM", id: "ITEM_VAR", item_data: { name: "Market fish", variations: [{ id: "VAR_FISH", item_variation_data: { pricing_type: "VARIABLE_PRICING" } }] } },
   ];
 
+  location: Record<string, unknown> = {
+    id: LOCATION,
+    name: "Crown St",
+    business_name: "Corner Café",
+    business_email: "hello@cornercafe.test",
+    website_url: "https://cornercafe.test",
+    phone_number: "+61 2 9000 0000",
+    logo_url: "https://images.square.test/logo-square.png",
+    full_format_logo_url: "https://images.square.test/logo-wide.png",
+    timezone: "Australia/Sydney",
+    coordinates: { latitude: -33.8836, longitude: 151.2149 },
+    address: { address_line_1: "12 Crown St", locality: "Surry Hills", administrative_district_level_1: "NSW", postal_code: "2010", country: "AU" },
+    business_hours: {
+      periods: [
+        ...["MON", "TUE", "WED", "THU", "FRI"].map((d) => ({ day_of_week: d, start_local_time: "07:00:00", end_local_time: "15:00:00" })),
+        { day_of_week: "SAT", start_local_time: "08:00:00", end_local_time: "13:30:00" },
+      ],
+    },
+  };
+
   private priceOf(id: string) {
     for (const item of this.catalog as { item_data?: { variations?: { id: string; item_variation_data?: { price_money?: { amount: number } } }[] } }[]) {
       const v = item.item_data?.variations?.find((x) => x.id === id);
@@ -92,6 +112,7 @@ class FakeSquare {
       return reply(200, result);
     };
 
+    if (method === "GET" && url.pathname === `/v2/locations/${LOCATION}`) return reply(200, { location: this.location });
     if (method === "GET" && url.pathname === "/v2/catalog/list") {
       // Two pages, to exercise the cursor.
       const cursor = url.searchParams.get("cursor");
@@ -389,4 +410,100 @@ test("connector API: a pushed menu survives a restart", async () => {
   const menu = (await (await second.app.request(`${BASE}/api/catalog`)).json()) as { items: { id: string }[] };
   assert.deepEqual(menu.items.map((i) => i.id), ["pos-1"]);
   second.stop();
+});
+
+test("square: the venue's logo, address, hours, contact details and map position come from its Square location", async () => {
+  const { square, shop } = squareShop();
+  await shop.collect.ready;
+  const { merchant } = (await (await shop.call("/api/catalog")).json()) as {
+    merchant: { name: string; logoUrl?: string; location: Record<string, unknown> };
+  };
+  assert.equal(merchant.name, "Test Café", "the shop's own name stays");
+  assert.equal(merchant.logoUrl, "https://images.square.test/logo-wide.png", "the wide logo suits the email header");
+  assert.deepEqual(merchant.location, {
+    name: "Front counter",
+    address: "12 Crown St, Surry Hills NSW 2010",
+    hours: "Mon-Fri 7am-3pm, Sat 8am-1:30pm",
+    openingHours: [
+      ...[1, 2, 3, 4, 5].map((day) => ({ day, open: "07:00", close: "15:00" })),
+      { day: 6, open: "08:00", close: "13:30" },
+    ],
+    lat: -33.8836,
+    lng: 151.2149,
+  });
+  const listing = await shop.collect.listing();
+  assert.equal(listing.timeZone, "Australia/Sydney");
+  assert.equal(square.calls.filter((c) => c === `GET /v2/locations/${LOCATION}`).length, 1);
+
+  // Emails use it: replies go to Square's business email, and the address is in the receipt.
+  const orderId = await testOrder(shop);
+  const email = (await shop.store.getLatestEmail(orderId))!;
+  assert.match(email.html, /12 Crown St, Surry Hills NSW 2010/);
+  assert.match(email.html, /mailto:hello@cornercafe\.test/);
+  assert.match(email.html, /<img src="https:\/\/images\.square\.test\/logo-wide\.png"/);
+});
+
+test("square: the shop's own settings win over Square's, and the synced profile survives a restart", async () => {
+  const square = new FakeSquare();
+  const store = testStore();
+  const own = {
+    name: "My Café",
+    fromEmail: "orders@shop.test",
+    supportEmail: "me@mycafe.test",
+    location: { name: "Side window", hours: "Whenever we feel like it" },
+  };
+  const first = createCollect({
+    baseUrl: BASE,
+    merchant: own,
+    catalog: [],
+    currency: "aud",
+    store,
+    mailer: outboxMailer(),
+    signingKeyPem: generateSigningKeyPem(),
+    payments: { test: true },
+    connectors: [squareConnector({ accessToken: TOKEN, locationId: LOCATION, fetch: square.fetch })],
+  });
+  await first.ready;
+  const read = async (shop: ReturnType<typeof createCollect>) =>
+    ((await (await shop.app.request(`${BASE}/api/catalog`)).json()) as { merchant: { location: { name: string; hours?: string; address?: string } } }).merchant;
+  const synced = await read(first);
+  assert.equal(synced.location.name, "Side window");
+  assert.equal(synced.location.hours, "Whenever we feel like it");
+  assert.equal(synced.location.address, "12 Crown St, Surry Hills NSW 2010", "Square fills what the shop left out");
+  first.stop();
+
+  // Square is down after a restart: the saved profile still shows.
+  square.failNext = 100;
+  const second = createCollect({
+    baseUrl: BASE,
+    merchant: own,
+    catalog: [],
+    currency: "aud",
+    store,
+    mailer: outboxMailer(),
+    signingKeyPem: generateSigningKeyPem(),
+    payments: { test: true },
+    connectors: [squareConnector({ accessToken: TOKEN, locationId: LOCATION, fetch: square.fetch })],
+  });
+  await second.ready;
+  assert.equal((await read(second)).location.address, "12 Crown St, Surry Hills NSW 2010");
+  second.stop();
+});
+
+test("square: with a webhook, staff marking it ready in Square sends the QR after the receipt", async () => {
+  const { square, shop } = squareShop({ qrEmail: "when-ready" });
+  await shop.collect.ready;
+  const orderId = await testOrder(shop);
+  await shop.collect.flushConnectors();
+  assert.match((await shop.store.getLatestEmail(orderId))!.subject, /^Receipt: /);
+  const [sq] = [...square.orders.values()];
+  const { body, signature } = square.signed({
+    type: "order.fulfillment.updated",
+    data: { object: { order_fulfillment_updated: { order_id: sq.id, location_id: LOCATION, fulfillment_update: [{ new_state: "PREPARED" }] } } },
+  });
+  const res = await shop.call("/connect/square/webhook", { method: "POST", headers: { "x-square-hmacsha256-signature": signature }, body });
+  assert.equal(res.status, 200);
+  const ready = (await shop.store.getLatestEmail(orderId))!;
+  assert.match(ready.subject, /^Ready to collect: /);
+  assert.match(ready.html, /alt="Pickup QR code"/);
 });

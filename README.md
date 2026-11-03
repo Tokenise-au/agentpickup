@@ -51,9 +51,11 @@ real goods need that raised.
 
 ## MCP server
 
-`@agentpickup/mcp` lets any MCP client order from an agentPickup shop: `get_shop`, `create_pickup_order`,
-`pay_order` (x402 from a wallet you configure, with a spend cap), `order_status` and `get_pickup_pass`
-(Sign-In-With-X). The demo hosts it at `/mcp`, paying with the demo agent's wallet:
+`@agentpickup/mcp` lets any MCP client find agentPickup shops and order from them: `find_shops` (near a
+point, in a suburb, or selling something, from the [directory](#agent-directory)), `get_shop`,
+`create_pickup_order`, `pay_order` (x402 from a wallet you configure, with a spend cap), `order_status` and
+`get_pickup_pass` (Sign-In-With-X). The demo hosts it at `/mcp`, searching every venue there and paying the
+Demo Café with the demo agent's wallet:
 
 ```json
 { "mcpServers": { "agentpickup": { "type": "http", "url": "https://agentpickup.app/mcp" } } }
@@ -91,8 +93,17 @@ app.route("/", pickup.app); // any Hono app; pickup.app.fetch works anywhere
 
 ### Email
 
-Each paid order gets an email with the QR (inline) and the pickup code, and a second one when it's marked
-ready. Both have a plain-text part, and replies go to the shop's `supportEmail`. Mailers:
+The first email is the receipt: the items, the total, how it was paid (USDC links its transaction on the block
+explorer), the order number and time, and the shop's `taxId` if set (`"ABN 51 824 753 556"`). When the QR goes
+out depends on `qrEmail`:
+
+- `"with-receipt"` (default): the receipt carries the QR and pickup code, and a second email says when it's ready.
+- `"when-ready"`: the receipt says the QR will follow, and the QR comes in the "ready" email when staff or the
+  POS mark the order ready. If nobody does within `qrFallbackMinutes` (default 20), the QR goes out anyway, so
+  a busy venue never strands a customer. Meanwhile the pass page says "Being prepared" and still shows the QR.
+  Use it where someone marks orders ready; a venue with its Square webhook set up gets it by default.
+
+Every email has a plain-text part, and replies go to the shop's `supportEmail`. Mailers:
 
 - `cloudflareMailer({ accountId, apiToken })`: Cloudflare Email Sending, from a domain onboarded to it.
 - `resendMailer({ apiKey })`: Resend.
@@ -166,6 +177,10 @@ const pickup = createCollect({
 - Scanning the QR completes the pickup and closes the order in Square. A no-show cancels the pickup,
   records a refund in Square when agentPickup gave the money back, and closes the order (Square won't
   cancel an order once a payment is recorded).
+- The venue's Square location fills in its profile: logo, address, opening hours, support email, website,
+  phone, time zone and map position. The shop's own settings win; Square fills what they leave out, so a
+  seller only picks a brand colour. It refreshes hourly and on `POST /connect/v1/catalog/sync`, and the last
+  copy is kept, so a Square outage at start doesn't blank it. `syncProfile: false` turns it off.
 - Check your setup against a sandbox: `node --conditions=source --import tsx scripts/square-sandbox-check.ts`.
 
 **Any other platform** uses the connector API, so it plugs in without a bespoke build. Set
@@ -181,7 +196,8 @@ const pickup = createCollect({
 
 New orders reach the platform as signed webhooks (`webhook: { url, secret }`, see How it works). To build a
 connector of your own, implement `PickupConnector`: `fetchCatalog` (the menu), `onEvent` (paid, ready,
-collected, expired, refunded) and `routes` (callbacks under `/connect/<name>/`). Each connector hears events
+collected, expired, refunded), `fetchProfile` (the venue's name, logo, address and hours) and `routes`
+(callbacks under `/connect/<name>/`). Each connector hears events
 in order per order, off the payment path, with retries, so a slow POS never delays a customer's payment.
 
 ### Many venues on one install
@@ -207,7 +223,7 @@ app.route("/", host.app);
 
 | Route | What |
 |---|---|
-| `PUT /host/v1/venues/:slug` | Create or update a venue: `merchant`, `currency`, `catalog`, `payments` (`test`, `x402`, `card`), `square`, `staffKey`, `webhook` |
+| `PUT /host/v1/venues/:slug` | Create or update a venue: `merchant`, `currency`, `catalog`, `payments` (`test`, `x402`, `card`), `square`, `staffKey`, `webhook`, `qrEmail`, `listed` |
 | `GET /host/v1/venues`, `/venues/:slug` | Venues with their links (shop, staff scanner, menu, Square webhook) and which secrets are set, never their values |
 | `DELETE /host/v1/venues/:slug` | Take a venue offline; its orders stay in its store |
 
@@ -222,6 +238,26 @@ all follow the path.
 
 **Live example:** [agentpickup.app/v/square-sandbox-cafe](https://agentpickup.app/v/square-sandbox-cafe/api/catalog)
 is a venue on the demo's host, connected to a Square sandbox, with its webhook registered in Square.
+
+### Agent directory
+
+The venue host publishes every listed venue at `GET /directory/v1/shops`, open to any agent (CORS `*`), so an
+agent can find shops near someone that sell what they want and order through each shop's own API or the MCP
+server. [agentpickup.app/directory/v1/shops](https://agentpickup.app/directory/v1/shops) is the public one.
+
+| Query | What |
+|---|---|
+| `q` | What they want, matched against shop names and menus (`flat white`, `croissants`; `coffee` finds coffee drinks) |
+| `place` | A suburb, street or city, matched against shop addresses |
+| `lat`, `lng`, `radius_km` | Where they are: shops within `radius_km` (default 10), nearest first, with `distanceKm` |
+| `open_now=true` | Leave out shops that are closed now, by their own hours and time zone |
+| `limit` | Default 10, at most 50 |
+
+Each result has the shop's `url`, name, logo, pickup location (address, hours, map position), `openNow`, the
+payments it takes, `testOnly` (no real money: test payments or a testnet), and the menu items that match. A
+Square venue's position and hours come from Square; others set `merchant.location.lat`, `lng` and
+`openingHours` (`[{ day: 1, open: "07:00", close: "15:00" }]`, Sunday is 0). `listed: false` keeps a venue
+out, and `alsoList` adds shops that aren't venues, such as the install's own.
 
 Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
 them to your public origin before `pickup.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
@@ -293,7 +329,8 @@ See [TODO.md](TODO.md) for what's built and what's next.
 - x402 is tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its
   refund authorization passes PayAI's verification.
 - Square has run end to end against a real sandbox, including the live "ready" webhook: staff marking an order
-  ready in Square emailed the customer from agentpickup.app about four seconds later.
+  ready in Square emailed the customer from agentpickup.app about four seconds later. Pulling the venue's
+  profile from its Square location is tested against a stand-in of Square's Locations API.
 - Not built yet: Doshii and Deliverect connectors (they need partner access), a venue admin dashboard (the
   admin API is there), custom domains per venue, Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes, offline
   scanning, a Shopify connector, UCP request signatures and cart/catalog endpoints, and the AP2

@@ -244,7 +244,7 @@ await pay("${esc(data.next.url)}", { method: "POST" });
       if (res.ok) {
         emailShownFor = emailKey;
         $("emailPreview").srcdoc = await res.text();
-        $("emailSubject").textContent = o.readyAt ? "Ready to collect: Demo Café order" : "Your Demo Café order: show this QR to collect";
+        $("emailSubject").textContent = o.readyAt ? "Ready to collect: Demo Café order" : "Receipt: your Demo Café order";
       }
     }
     renderLog(o, Boolean(emailShownFor));

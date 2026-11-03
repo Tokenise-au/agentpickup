@@ -20,6 +20,10 @@ const payer = key
     })
   : undefined;
 
-const server = createPickupMcpServer({ shopUrl, allowOtherShops: true, payer });
+// The public agentPickup directory, for find_shops. "off" leaves the tool out.
+const directory = env.AGENTPICKUP_DIRECTORY_URL || "https://agentpickup.app/directory/v1/shops";
+const directoryUrl = directory === "off" ? undefined : directory;
+
+const server = createPickupMcpServer({ shopUrl, allowOtherShops: true, payer, directoryUrl });
 await server.connect(new StdioServerTransport());
 console.error(`agentPickup MCP · shop ${shopUrl} · ${payer ? `wallet ${payer.address}` : "no wallet (pay_order returns the pay link)"}`);

@@ -82,15 +82,24 @@ export function statusPill(order: Order): string {
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
-export function passPage(o: { order: Order; merchant: MerchantProfile; qrDataUri: string; timeZone?: string }): string {
+export function passPage(o: {
+  order: Order;
+  merchant: MerchantProfile;
+  qrDataUri: string;
+  timeZone?: string;
+  /** The shop emails when an order is ready: say so while it's being made. */
+  readySoon?: boolean;
+}): string {
   const { order, merchant } = o;
   const live = order.status === "paid" || order.status === "ready";
+  const preparing = o.readySoon && order.status === "paid";
   const body = `
 <div class="card" style="text-align:center">
   ${statusPill(order)}
   ${
     live
-      ? `<h1 style="margin-top:10px">Show this at the counter</h1>
+      ? `<h1 style="margin-top:10px">${preparing ? "Being prepared" : "Show this at the counter"}</h1>
+         ${preparing ? `<p class="muted">We'll email you when it's ready. Show this code at the counter to collect.</p>` : ""}
          <img class="qr" src="${o.qrDataUri}" alt="Pickup QR code">
          <div class="label">Pickup code</div><div class="code">${esc(order.pickupCode ?? "")}</div>`
       : order.status === "collected"

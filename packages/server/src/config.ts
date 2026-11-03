@@ -24,7 +24,31 @@ export interface MerchantProfile {
   /** Shown to agent platforms (UCP links). */
   termsUrl?: string;
   privacyUrl?: string;
-  location: { name: string; address?: string; hours?: string };
+  /** Shown on receipts, e.g. "ABN 51 824 753 556". */
+  taxId?: string;
+  phone?: string;
+  location: PickupLocation;
+}
+
+/** Where customers collect. A connector such as Square can fill it in from the venue's own listing. */
+export interface PickupLocation {
+  name: string;
+  address?: string;
+  /** Opening hours as people read them: "Mon-Fri 7am-3pm". */
+  hours?: string;
+  /** The same hours as data, in the shop's time zone, for "open now" checks. */
+  openingHours?: OpeningPeriod[];
+  /** Where it is on a map, so agents can find shops near someone. */
+  lat?: number;
+  lng?: number;
+}
+
+export interface OpeningPeriod {
+  /** 0 Sunday to 6 Saturday. */
+  day: number;
+  /** "07:00" to "15:00" local time; a close before the open runs past midnight. */
+  open: string;
+  close: string;
 }
 
 /** What a shop passes in. `location` defaults to the shop's own name, for a shop with one counter. */
@@ -114,6 +138,14 @@ export interface CollectConfig {
   timeZone?: string;
   /** Optional footer link in emails. Off by default: shoppers see only the merchant. */
   poweredBy?: { label: string; url: string };
+  /**
+   * When the customer gets the pickup QR. "with-receipt" (default): in the first email, at payment.
+   * "when-ready": the first email is a receipt, and the QR follows when staff or the POS mark the order
+   * ready. Use it only where someone marks orders ready; qrFallbackMinutes covers a venue that forgets.
+   */
+  qrEmail?: "with-receipt" | "when-ready";
+  /** With qrEmail "when-ready": send the QR anyway this many minutes after payment. Default 20. */
+  qrFallbackMinutes?: number;
   /** Minutes a paid order stays collectable. Default 24 hours. */
   collectWindowMinutes?: number;
   /**

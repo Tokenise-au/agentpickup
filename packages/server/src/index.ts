@@ -19,9 +19,10 @@ import {
   type PaymentRail,
 } from "@agentpickup/core";
 import type { CatalogItem, CollectConfig, MerchantProfile } from "./config.js";
+import { listingOf, type ShopListing } from "./directory.js";
 import { mountConnect } from "./connect.js";
-import type { ConnectorContext } from "./connectors/types.js";
-import { renderPassEmail } from "./mail.js";
+import type { ConnectorContext, ShopProfile } from "./connectors/types.js";
+import { paymentSummary, renderPassEmail, type PassEmailKind } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
 import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
 import { stripeCardRail } from "./rails/stripe.js";
@@ -38,7 +39,16 @@ import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
 import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
 
-export type { CollectConfig, MerchantConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
+export type {
+  CollectConfig,
+  MerchantConfig,
+  MerchantProfile,
+  CatalogItem,
+  OpeningPeriod,
+  PickupLocation,
+  StripeRailConfig,
+  X402RailConfig,
+} from "./config.js";
 export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
 export type { AcpConfig } from "./acp.js";
 export type { Ap2Config, PlatformProfile } from "./ap2.js";
@@ -47,10 +57,30 @@ export type { SptStripeConfig } from "./rails/spt.js";
 export { SqliteStore, type MaybePromise, type Store, type StoredEmail } from "./store.js";
 export { PostgresStore, type PostgresStoreOptions, type Queryable } from "./postgres.js";
 export { parseCatalog, type ConnectConfig } from "./connect.js";
-export type { ConnectorContext, PickupConnector } from "./connectors/types.js";
-export { squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
+export type { ConnectorContext, PickupConnector, ShopProfile } from "./connectors/types.js";
+export { profileFromSquare, squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
 export { createVenueHost, type VenueHostConfig, type VenueInput } from "./venues.js";
-export { cappedMailer, cloudflareMailer, resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
+export {
+  distanceKm,
+  formatHours,
+  isOpen,
+  listingOf,
+  searchDirectory,
+  type DirectoryQuery,
+  type DirectoryResult,
+  type ShopListing,
+} from "./directory.js";
+export {
+  cappedMailer,
+  cloudflareMailer,
+  resendMailer,
+  outboxMailer,
+  paymentSummary,
+  renderPassEmail,
+  type Mailer,
+  type OutgoingMail,
+  type PassEmailKind,
+} from "./mail.js";
 
 const UNPAID_TIMEOUT_MS = 60 * 60_000;
 const STAFF_COOKIE = "collect_staff";
@@ -88,6 +118,10 @@ export function publicOrder(o: Order) {
 export function createCollect(config: CollectConfig) {
   const { store } = config;
   const merchant: MerchantProfile = { ...config.merchant, location: config.merchant.location ?? { name: config.merchant.name } };
+  // A connector (Square) can fill in the time zone with the rest of the venue's profile.
+  let timeZone = config.timeZone;
+  const qrWhenReady = config.qrEmail === "when-ready";
+  const qrFallbackMs = (config.qrFallbackMinutes ?? 20) * 60_000;
   const key = loadSigningKey(config.signingKeyPem);
   const base = config.baseUrl.replace(/\/$/, "");
   // A shop can live at a domain root or under a path (https://host/v/cafe); routes, links and cookies follow it.
@@ -170,10 +204,19 @@ export function createCollect(config: CollectConfig) {
     }
   }
 
-  async function sendPassEmail(order: Order, kind: "paid" | "ready") {
+  async function sendPassEmail(order: Order, kind: PassEmailKind) {
     if (!order.customerEmail) return;
-    const common = { order, merchant, passUrl: passUrl(order), kind, timeZone: config.timeZone, poweredBy: config.poweredBy };
-    const preview = renderPassEmail({ ...common, qrSrc: await qrDataUri(order) });
+    const withQr = kind !== "receipt";
+    const common = {
+      order,
+      merchant,
+      passUrl: passUrl(order),
+      kind,
+      payment: paymentSummary(order, { x402Network: x402?.network }),
+      timeZone,
+      poweredBy: config.poweredBy,
+    };
+    const preview = renderPassEmail({ ...common, qrSrc: withQr ? await qrDataUri(order) : "" });
     await store.saveEmail({ id: newId("eml"), orderId: order.id, to: order.customerEmail, subject: preview.subject, html: preview.html, at: Date.now() });
     try {
       let messageId: string | undefined;
@@ -186,7 +229,7 @@ export function createCollect(config: CollectConfig) {
           html: mail.html,
           text: mail.text,
           ...(merchant.supportEmail ? { replyTo: merchant.supportEmail } : {}),
-          attachments: [{ filename: "pickup-qr.png", content: await qrPng(order), contentId: "pickup-qr" }],
+          ...(withQr ? { attachments: [{ filename: "pickup-qr.png", content: await qrPng(order), contentId: "pickup-qr" }] } : {}),
         }));
       }
       // The provider's message id, to trace a send in its logs.
@@ -300,7 +343,8 @@ export function createCollect(config: CollectConfig) {
     });
     if (!order) return (await store.getOrder(orderId))!;
     await emit("order.paid", order, { paymentRef: payment.paymentRef, payer: payment.payer ?? undefined, ...payment.meta });
-    await sendPassEmail(order, "paid");
+    // Where staff or the POS mark orders ready, the QR waits for that email (or the fallback in sweep).
+    await sendPassEmail(order, qrWhenReady ? "receipt" : "paid");
     return order;
   }
 
@@ -348,7 +392,7 @@ export function createCollect(config: CollectConfig) {
   }
 
   function blockedReason(o: Order): string | undefined {
-    if (o.status === "collected") return `Already collected ${formatTime(o.collectedAt ?? 0, config.timeZone)}.`;
+    if (o.status === "collected") return `Already collected ${formatTime(o.collectedAt ?? 0, timeZone)}.`;
     if (o.status === "expired") return "This order expired before it was collected.";
     if (o.status === "cancelled") return "This order was cancelled.";
     if (o.status === "awaiting_payment") return "This order hasn't been paid.";
@@ -431,6 +475,14 @@ export function createCollect(config: CollectConfig) {
         if (expired) await emit("order.expired", expired, { outcome });
       } catch (err) {
         console.error(`[collect] expiring ${o.id} failed:`, err);
+      }
+    }
+    // "when-ready" shops: a paid order nobody marked ready still gets its QR after qrFallbackMinutes.
+    if (qrWhenReady) {
+      for (const o of await store.listOrders({ statuses: ["paid"], limit: 200 })) {
+        if (!o.paidAt || now - o.paidAt < qrFallbackMs || (await store.getDoc("qr-emailed", o.id))) continue;
+        await store.putDoc("qr-emailed", o.id, { at: now });
+        await sendPassEmail(o, "qr");
       }
     }
     // New no-shows, and refunds that failed on an earlier sweep.
@@ -573,24 +625,65 @@ export function createCollect(config: CollectConfig) {
     }
     return synced;
   }
-  const ready = menuReady
-    .then(() => (connectors.some((c) => c.fetchCatalog) ? syncCatalog() : []))
+  /** The shop's own settings win; a connector's profile (Square's location) fills what they leave out. */
+  function useProfile(p: ShopProfile) {
+    const own = config.merchant;
+    for (const k of ["logoUrl", "supportEmail", "shopUrl", "phone"] as const) {
+      if (!own[k] && p[k]) merchant[k] = p[k];
+    }
+    if (p.location) {
+      const defined = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
+      merchant.location = {
+        ...defined(p.location),
+        ...defined(own.location ?? {}),
+        name: own.location?.name ?? p.location.name ?? own.name,
+      };
+    }
+    if (!config.timeZone && p.timeZone) timeZone = p.timeZone;
+  }
+  const profileReady = Promise.resolve()
+    .then(() => store.getDoc<ShopProfile>("profile", "synced"))
+    .then((saved) => {
+      if (saved) useProfile(saved);
+    })
+    .catch((err) => console.error("[collect] loading the saved profile failed:", err));
+  async function syncProfile() {
+    for (const connector of connectors) {
+      if (!connector.fetchProfile) continue;
+      const profile = await connector.fetchProfile(ctxFor(connector.name));
+      await store.putDoc("profile", "synced", { ...profile, updatedAt: Date.now() });
+      useProfile(profile);
+      return true;
+    }
+    return false;
+  }
+  /** Pull the menu and the venue's profile from the connectors. Runs at start and hourly. */
+  async function syncConnectors() {
+    await syncProfile().catch((err) => console.error("[collect] syncing the profile failed:", err));
+    if (connectors.some((c) => c.fetchCatalog)) await syncCatalog().catch((err) => console.error("[collect] syncing the menu failed:", err));
+  }
+  const ready = Promise.all([menuReady, profileReady])
+    .then(() => (connectors.length ? syncConnectors() : undefined))
     .then(() => undefined)
-    .catch((err) => console.error("[collect] syncing the menu failed:", err));
+    .catch((err) => console.error("[collect] starting the connectors failed:", err));
   // What a POS or ordering platform needs to make an order: no email address.
   const platformView = (o: Order) => ({ ...publicOrder(o), customerName: o.customerName, pickupCode: o.pickupCode });
   mountConnect(app, {
     connect: config.connect,
     connectors,
     ctxFor,
-    syncCatalog,
+    // A manual sync refreshes the venue's profile too.
+    syncCatalog: async () => {
+      await syncProfile().catch((err) => console.error("[collect] syncing the profile failed:", err));
+      return syncCatalog();
+    },
     clearCatalog,
     listOrders: async (statuses) => await store.listOrders({ statuses, limit: 200 }),
     view: platformView,
   });
 
   app.get("/api/catalog", async (c) => {
-    await menuReady;
+    await Promise.all([menuReady, profileReady]);
     return c.json({
       merchant: { name: merchant.name, brandColor: merchant.brandColor, logoUrl: merchant.logoUrl, location: merchant.location },
       currency,
@@ -848,7 +941,7 @@ export function createCollect(config: CollectConfig) {
   app.get("/p/:passId", async (c) => {
     const order = await store.getOrderByPassId(c.req.param("passId"));
     if (!order) return c.html(messagePage(merchant, "Pass not found", "Check the link in your email."), 404);
-    return c.html(passPage({ order, merchant, qrDataUri: await qrDataUri(order), timeZone: config.timeZone }));
+    return c.html(passPage({ order, merchant, qrDataUri: await qrDataUri(order), timeZone, readySoon: qrWhenReady }));
   });
 
   // Where the QR points. Staff phones (signed in on /staff) land on the hand-over
@@ -939,6 +1032,21 @@ export function createCollect(config: CollectConfig) {
 
   const timer = setInterval(() => void sweep(), 60_000);
   timer.unref();
+  const syncTimer = connectors.length ? setInterval(() => void syncConnectors(), 60 * 60_000) : null;
+  syncTimer?.unref();
+
+  /** This shop as the agent directory shows it. */
+  async function listing(): Promise<ShopListing> {
+    await ready;
+    return listingOf({
+      url: base,
+      merchant,
+      currency,
+      timeZone,
+      items: menu,
+      payments: { x402: x402 ? { network: x402.network ?? "eip155:84532" } : null, card: Boolean(card), test: Boolean(config.payments.test) },
+    });
+  }
 
   return {
     app,
@@ -951,10 +1059,15 @@ export function createCollect(config: CollectConfig) {
     /** Settles once a saved or synced menu is loaded. */
     ready,
     syncCatalog,
+    syncProfile,
     flushConnectors,
+    listing,
     passUrl,
     collectLink,
-    stop: () => clearInterval(timer),
+    stop: () => {
+      clearInterval(timer);
+      if (syncTimer) clearInterval(syncTimer);
+    },
   };
 }
 

@@ -1,15 +1,16 @@
 # @agentpickup/mcp
 
-An MCP server for [agentPickup](https://github.com/dav3trad3r/agentpickup) shops. It lets an AI agent see
-what a shop sells, order it, pay in USDC over x402, and hand its user the QR they show at the counter to
-collect.
+An MCP server for [agentPickup](https://github.com/dav3trad3r/agentpickup) shops. It lets an AI agent find
+pickup shops near its user, see what they sell, order, pay in USDC over x402, and hand its user the QR they
+show at the counter to collect.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
+| `find_shops` | Shops near a point (`lat`/`lng`), in a suburb (`place`) or selling something (`query`), from the agentPickup directory: each one's `shop_url`, address, hours, open now, distance and matching items |
 | `get_shop` | Items and prices, the pickup location, and how the shop takes payment |
-| `create_pickup_order` | Creates an order. Needs the user's email, where the shop sends the pickup QR |
+| `create_pickup_order` | Creates an order. Needs the user's email, where the shop sends the receipt and pickup QR. A test shop marks it paid straight away, with no money moving |
 | `pay_order` | Pays the order's x402 link from your wallet and returns the pass link. With no wallet set up, returns the price and pay link instead |
 | `order_status` | Waiting for payment, paid, ready, collected or expired |
 | `get_pickup_pass` | Fetches the pass link, pickup code and QR again by signing in as the paying wallet (Sign-In-With-X) |
@@ -46,6 +47,7 @@ Or run it locally against any agentPickup shop, with your own wallet:
 | `AGENTPICKUP_WALLET_KEY` | none | An EVM private key holding USDC. Without it, `pay_order` only quotes |
 | `AGENTPICKUP_MAX_PER_ORDER` | `$25` | The most the wallet pays for one order |
 | `AGENTPICKUP_NETWORKS` | `eip155:84532` | Networks the wallet may pay on. Base Sepolia (test USDC) unless you add `eip155:8453` for Base mainnet |
+| `AGENTPICKUP_DIRECTORY_URL` | `https://agentpickup.app/directory/v1/shops` | Where `find_shops` searches. `off` leaves the tool out |
 
 Use a wallet that holds only what you're willing to let an agent spend. The tools tell the model to confirm
 items and the total with the user before paying.

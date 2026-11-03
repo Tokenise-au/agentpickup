@@ -109,6 +109,9 @@ const collect = createCollect({
   // Agent signatures are checked and reported on agent payment routes, not required, in the demo.
   agentSignatures: { mode: "log" },
   collectWindowMinutes: 120,
+  // A receipt first, the QR when "Mark ready" is pressed (or after 5 minutes if nobody does).
+  qrEmail: "when-ready",
+  qrFallbackMinutes: 5,
   staffKey: env.STAFF_KEY || undefined,
   // The public demo lets visitors play staff; a real shop sets STAFF_KEY instead.
   allowOpenStaff: !env.STAFF_KEY,
@@ -171,6 +174,7 @@ app.use("/api/demo/agent-pay", limit(4));
 app.use("/mcp", limit(60));
 app.use("/v/*", limit(60));
 app.use("/host/*", limit(30));
+app.use("/directory/*", limit(60));
 app.use(
   "/mcp",
   cors({
@@ -234,24 +238,6 @@ app.post("/api/demo/agent-pay", async (c) => {
   }
 });
 
-// The agentPickup MCP server, hosted for the demo shop. The demo agent's testnet wallet pays, under the
-// same daily cap as the button on the page; the same wallet signs in to fetch passes again.
-const mcp = createMcpHandler({
-  shopUrl: baseUrl,
-  fetch: (req) => collect.app.fetch(req),
-  payer:
-    demoAgent && demoAgentKey
-      ? {
-          ...walletPayer({ privateKey: demoAgentKey, networks: [x402Network] }),
-          pay: async (order) => {
-            const paid = await demoAgent.pay(order.id);
-            return paid.ok ? { ...paid, network: x402Network } : { ok: false, error: paid.error };
-          },
-        }
-      : undefined,
-});
-app.all("/mcp", (c) => mcp(c.req.raw));
-
 // More venues on the same install, at /v/<slug>, managed through /host/v1. Off unless both keys are set.
 const venueHost =
   env.VENUE_SECRET && env.VENUE_ADMIN_KEY
@@ -266,9 +252,36 @@ const venueHost =
         shared: { exposeEmailPreview: true, agentSignatures: { mode: "log" }, collectWindowMinutes: 120 },
         // Demo venues let visitors play staff unless a venue sets its own staff key.
         allowOpenStaff: true,
+        // The Demo Café is in the directory too.
+        alsoList: [collect],
       })
     : null;
 if (venueHost) app.route("/", venueHost.app);
+
+// The agentPickup MCP server, hosted for the demo shop. The demo agent's wallet pays, under the
+// same daily cap as the button on the page; the same wallet signs in to fetch passes again.
+// With venues on, find_shops searches the directory and the tools can order from any venue here.
+const onVenueHost = (req: Request) => /^\/(v|directory)\//.test(new URL(req.url).pathname);
+const mcp = createMcpHandler({
+  shopUrl: baseUrl,
+  fetch: (req) => (venueHost && onVenueHost(req) ? venueHost.app.fetch(req) : collect.app.fetch(req)),
+  directoryUrl: venueHost ? `${baseUrl}/directory/v1/shops` : undefined,
+  payer:
+    demoAgent && demoAgentKey
+      ? {
+          ...walletPayer({ privateKey: demoAgentKey, networks: [x402Network] }),
+          pay: async (order) => {
+            // The demo wallet pays the Demo Café only; a venue's orders are paid by the agent's own wallet.
+            if (!order.payUrl.startsWith(`${baseUrl}/api/`)) {
+              return { ok: false, error: `The demo wallet pays the Demo Café only. Pay this order from your own x402 wallet: POST ${order.payUrl}` };
+            }
+            const paid = await demoAgent.pay(order.id);
+            return paid.ok ? { ...paid, network: x402Network } : { ok: false, error: paid.error };
+          },
+        }
+      : undefined,
+});
+app.all("/mcp", (c) => mcp(c.req.raw));
 
 app.route("/", collect.app);
 

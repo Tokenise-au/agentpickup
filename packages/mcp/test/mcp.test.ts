@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { setupShop, NETWORK } from "../../server/test/helpers.js";
+import { createVenueHost, outboxMailer } from "../../server/src/index.js";
+import { setupShop, NETWORK, testStore } from "../../server/test/helpers.js";
 import { createMcpHandler, createPickupMcpServer, walletPayer, type PickupMcpOptions } from "../src/index.js";
 
 async function connect(opts: Partial<PickupMcpOptions> = {}) {
@@ -97,8 +98,76 @@ test("a hosted server stays on its own shop; a local one can be pointed elsewher
   const other = await local.call("get_shop", { shop_url: "http://other.test" });
   assert.equal(other.isError, true);
   assert.match(other.text, /https/);
-  const same = await local.call("get_shop", { shop_url: "https://shop.test/anything" });
-  assert.equal(same.isError, false);
+  const pasted = await local.call("get_shop", { shop_url: "https://shop.test/api/catalog" });
+  assert.equal(pasted.isError, false, "a pasted API link finds its shop");
+  assert.equal(pasted.json.shop, "https://shop.test");
+});
+
+test("find_shops searches the directory, and the other tools order from a venue it found", async () => {
+  const home = setupShop();
+  const host = createVenueHost({
+    baseUrl: "https://shop.test",
+    store: testStore(),
+    storeFor: () => testStore(),
+    mailer: outboxMailer(),
+    secretKey: "x".repeat(40),
+    adminKeys: ["k"],
+    alsoList: [home.collect],
+  });
+  await host.app.request("https://shop.test/host/v1/venues/corner", {
+    method: "PUT",
+    headers: { Authorization: "Bearer k", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      merchant: { name: "Corner Café", fromEmail: "o@shop.test", location: { name: "Counter", address: "12 Crown St, Surry Hills", lat: -33.8836, lng: 151.2149 } },
+      catalog: [{ id: "fw", name: "Flat white", priceCents: 520 }, { id: "sd", name: "Sourdough", priceCents: 900 }],
+      currency: "aud",
+      payments: { test: true },
+    }),
+  });
+  // As agentpickup.app routes it: venues and the directory to the venue host, everything else to the home shop.
+  const fetch = (req: Request) => (/^\/(v|directory)\//.test(new URL(req.url).pathname) ? host.app.fetch(req) : home.collect.app.fetch(req));
+  const server = createPickupMcpServer({ shopUrl: "https://shop.test", fetch, directoryUrl: "https://shop.test/directory/v1/shops" });
+  const client = new Client({ name: "test", version: "1.0.0" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    const text = res.content[0].text;
+    return { text, json: text.includes("\n\n{") ? JSON.parse(text.slice(text.indexOf("\n\n{") + 2)) : null, isError: Boolean(res.isError) };
+  };
+
+  const { tools } = await client.listTools();
+  assert.ok(tools.some((t) => t.name === "find_shops"));
+  assert.ok((tools.find((t) => t.name === "get_shop")!.inputSchema.properties as Record<string, unknown>).shop_url, "shop_url is offered");
+
+  const found = await call("find_shops", { lat: -33.884, lng: 151.21, query: "flat white" });
+  assert.equal(found.isError, false, found.text);
+  assert.match(found.text, /^1 shop:\n- Corner Café \(0\.5 km, test shop, no real money\), 12 Crown St, Surry Hills: Flat white A\$5\.20/);
+  const [corner] = found.json.shops;
+  assert.equal(corner.shop_url, "https://shop.test/v/corner");
+  assert.deepEqual(corner.items, [{ id: "fw", name: "Flat white", price: "A$5.20" }]);
+  assert.equal(corner.moreItems, 1);
+
+  const everywhere = await call("find_shops", {});
+  assert.deepEqual(everywhere.json.shops.map((s: { name: string }) => s.name).sort(), ["Corner Café", "Test Café"]);
+  assert.match((await call("find_shops", { query: "caviar" })).text, /^No agentPickup shops match/);
+  assert.equal((await call("find_shops", { lat: 1 })).isError, true);
+
+  const menu = await call("get_shop", { shop_url: corner.shop_url });
+  assert.match(menu.text, /^Corner Café, collect at Counter\. A test shop/);
+
+  const order = await call("create_pickup_order", { shop_url: corner.shop_url, items: [{ id: "fw", qty: 2 }], email: "robin@example.com" });
+  assert.equal(order.isError, false, order.text);
+  assert.equal(order.json.test, true);
+  assert.equal(order.json.status, "paid");
+  assert.match(order.json.passUrl, /^https:\/\/shop\.test\/v\/corner\/p\//);
+  const status = await call("order_status", { order_id: order.json.orderId, shop_url: corner.shop_url });
+  assert.match(status.text, /is paid and being prepared/);
+
+  const elsewhere = await call("get_shop", { shop_url: "https://evil.test" });
+  assert.equal(elsewhere.isError, true);
+  assert.match(elsewhere.text, /shops on https:\/\/shop\.test only/);
+  host.stop();
 });
 
 test("bad input comes back as a tool error the model can read", async () => {
