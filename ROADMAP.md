@@ -16,13 +16,15 @@ where sellers look.
 - Live at [agentpickup.app](https://agentpickup.app): the Demo Café takes real USDC on Base, and a Square sandbox
   venue shows the Square flow end to end (menu in, order on Square's screens, "ready" from Square, scan to
   collect).
-- On npm: `@agentpickup/core` 0.2.0 and `@agentpickup/server` 0.4.0. Server 0.6.0 and MCP 0.2.0 are built and
-  waiting to be published.
-- In the official MCP Registry (0.1.1). Agents can find shops through the directory and `find_shops`.
+- On npm: `@agentpickup/core` 0.2.0, `@agentpickup/server` 0.6.1 and `@agentpickup/mcp` 0.2.0.
+- In the official MCP Registry (0.2.0). Agents can find shops through the directory and `find_shops`.
 - Usable today by developers who self-host the library. Sellers can't sign up by themselves, and it isn't in the
   Square App Marketplace.
 
-## Phase 0: ship what's built (this week)
+## Phase 0: ship what's built (done 2026-11-03)
+
+On npm: server 0.6.1 and MCP 0.2.0; MCP Registry 0.2.0; privacy, terms and support pages live; support mail at
+hello@agentpickup.app.
 
 | What | Who | Size |
 |---|---|---|
