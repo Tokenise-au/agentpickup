@@ -3,6 +3,7 @@
 import { serve } from "@hono/node-server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { DatabaseSync } from "node:sqlite";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateSigningKeyPem, newId } from "@agentpickup/core";
@@ -18,6 +19,17 @@ function signingKey(): string {
   if (env.SIGNING_KEY_PEM) return env.SIGNING_KEY_PEM.replace(/\\n/g, "\n");
   const file = join(dataDir, "signing-key.pem");
   if (!existsSync(file)) writeFileSync(file, generateSigningKeyPem(), { mode: 0o600 });
+  return readFileSync(file, "utf8");
+}
+
+// AP2 mandates need an ES256 (P-256) business key; kept beside the pass key.
+function ap2Key(): string {
+  if (env.AP2_SIGNING_KEY_PEM) return env.AP2_SIGNING_KEY_PEM.replace(/\\n/g, "\n");
+  const file = join(dataDir, "ap2-key.pem");
+  if (!existsSync(file)) {
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    writeFileSync(file, privateKey.export({ format: "pem", type: "pkcs8" }).toString(), { mode: 0o600 });
+  }
   return readFileSync(file, "utf8");
 }
 
@@ -62,6 +74,7 @@ const collect = createCollect({
     stripe: env.STRIPE_SECRET_KEY
       ? { secretKey: env.STRIPE_SECRET_KEY, businessProfile: env.STRIPE_PROFILE_ID, environment: env.STRIPE_SECRET_KEY.includes("_test_") ? "testmode" : "livemode" }
       : undefined,
+    ap2: { signingKeyPem: ap2Key() },
   },
   collectWindowMinutes: 120,
   staffKey: env.STAFF_KEY || undefined,

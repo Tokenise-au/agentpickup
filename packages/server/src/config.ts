@@ -3,6 +3,7 @@ import type { FacilitatorClient } from "@x402/core/server";
 import type { MppRailConfig } from "./rails/mpp.js";
 import type { SptStripeConfig } from "./rails/spt.js";
 import type { AcpConfig } from "./acp.js";
+import type { Ap2Config } from "./ap2.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 
@@ -71,7 +72,11 @@ export interface CollectConfig {
     test?: boolean;
   };
   /** UCP (Universal Commerce Protocol): checkout sessions with the pickup fulfilment method, at /ucp/v1. */
-  ucp?: { stripe?: SptStripeConfig };
+  ucp?: {
+    stripe?: SptStripeConfig;
+    /** AP2 mandates: sign every checkout and require a checkout mandate from platforms that support AP2. */
+    ap2?: Ap2Config;
+  };
   /** ACP (Agentic Commerce Protocol): checkout sessions with the pickup option, at /acp. */
   acp?: AcpConfig & { stripe?: SptStripeConfig };
   /** IANA zone for times in emails and pages, e.g. "Australia/Brisbane". */

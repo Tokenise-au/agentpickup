@@ -8,6 +8,7 @@ import type { Order } from "@agentpickup/core";
 import { priceLines, type ProtocolCore } from "./protocol.js";
 import { chargeSpt, sptClient, type SptStripeConfig } from "./rails/spt.js";
 import type { StripeLike } from "./rails/mpp.js";
+import { AP2_CAPABILITY, Ap2Error, type Ap2 } from "./ap2.js";
 
 export const UCP_VERSION = "2026-08-25";
 const SPEC = `https://ucp.dev/${UCP_VERSION}`;
@@ -28,6 +29,8 @@ interface Session {
   selectedDestinationId: string | null;
   orderId: string | null;
   createdAt: number;
+  /** AP2 mandates negotiated: every response is signed and completing needs a checkout mandate. */
+  ap2?: boolean;
 }
 
 interface Message {
@@ -40,7 +43,8 @@ interface Message {
 
 const id = (prefix: string) => `${prefix}_${randomBytes(9).toString("base64url")}`;
 
-export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptStripeConfig }) {
+export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptStripeConfig; ap2?: Ap2 | null }) {
+  const ap2 = config.ap2 ?? null;
   const stripe: StripeLike | null = config.stripe ? sptClient(config.stripe) : null;
   const endpoint = `${core.base}/ucp/v1`;
   const CURRENCY = core.currency.toUpperCase();
@@ -107,9 +111,23 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
           "dev.ucp.shopping.order": [
             { version: UCP_VERSION, spec: `${SPEC}/specification/shopping/order`, schema: `${SPEC}/schemas/shopping/order.json` },
           ],
+          ...(ap2
+            ? {
+                [AP2_CAPABILITY]: [
+                  {
+                    version: UCP_VERSION,
+                    spec: `${SPEC}/specification/payment/extensions/ap2-mandates`,
+                    schema: `${SPEC}/schemas/common/payment_ap2_mandate.json`,
+                    extends: "dev.ucp.shopping.checkout",
+                    config: { vp_formats_supported: { "dc+sd-jwt": {} } },
+                  },
+                ],
+              }
+            : {}),
         },
         payment_handlers: paymentHandlers(),
       },
+      ...(ap2 ? { keys: [ap2.publicJwk] } : {}),
     }),
   );
 
@@ -151,7 +169,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
     s.status = messagesFor(s).length ? "incomplete" : "ready_for_complete";
   }
 
-  function render(s: Session) {
+  function render(s: Session, problems: Message[] = []) {
     const total = s.lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
     const lineIds = s.lines.map((l) => l.lineId);
     const body: Record<string, unknown> = {
@@ -212,14 +230,25 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
       },
       ...(s.email ? { buyer: { email: s.email, ...(s.name ? { first_name: s.name } : {}) } } : {}),
     };
-    const messages = messagesFor(s);
-    if (messages.length && s.status === "incomplete") body.messages = messages;
+    const messages = [...problems, ...(s.status === "incomplete" ? messagesFor(s) : [])];
+    if (messages.length) body.messages = messages;
     if (s.orderId) {
       const order = core.store.getOrder(s.orderId);
       if (order) body.order = { id: order.id, label: `Pickup ${order.pickupCode ?? ""}`.trim(), permalink_url: core.passUrl(order) };
     }
+    if (s.ap2 && ap2) {
+      (body.ucp as { capabilities: Record<string, unknown> }).capabilities[AP2_CAPABILITY] = [{ version: UCP_VERSION }];
+      // Signed last, over everything the platform sees except `ap2` itself.
+      body.ap2 = { merchant_authorization: ap2.merchantAuthorization(body) };
+    }
     return body;
   }
+
+  /** The terms a checkout mandate must match: id, totals and line items as we render them now. */
+  const terms = (s: Session) => {
+    const body = render(s);
+    return { id: s.id, totals: body.totals, line_items: body.line_items };
+  };
 
   const error = (c: Context, status: 400 | 404 | 409 | 402, code: string, content: string) =>
     c.json({ ucp: { version: UCP_VERSION, status: "error" }, messages: [{ type: "error", code, content, severity: "unrecoverable" }] }, status);
@@ -281,11 +310,7 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
     return problems;
   }
 
-  const withProblems = (s: Session, problems: Message[]) => {
-    const body = render(s);
-    if (problems.length) body.messages = [...problems, ...((body.messages as Message[] | undefined) ?? [])];
-    return body;
-  };
+  const withProblems = (s: Session, problems: Message[]) => render(s, problems);
 
   // ---------- endpoints ----------
 
@@ -304,6 +329,8 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
         selectedDestinationId: null,
         orderId: null,
         createdAt: Date.now(),
+        // AP2 locks the session when both sides support mandates.
+        ap2: ap2 ? await ap2.negotiated(agent) : false,
       };
       const problems = applyBody(s, body);
       settle(s);
@@ -342,10 +369,24 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
       if (s.status !== "ready_for_complete") return c.json(withProblems(s, []), 409);
       const body = ((await c.req.json().catch(() => null)) ?? {}) as {
         payment?: { instruments?: { id?: string; handler_id?: string; type?: string; selected?: boolean; credential?: { type?: string; token?: string } }[] };
+        ap2?: { checkout_mandate?: string };
       };
       const instruments = body.payment?.instruments ?? [];
       const chosen = instruments.find((i) => i.selected) ?? instruments[0];
       if (!chosen) return error(c, 402, "payment_required", "Send payment.instruments with the selected instrument.");
+
+      let mandate: { raw: string; checkoutHash: string } | null = null;
+      if (s.ap2 && ap2) {
+        const raw = body.ap2?.checkout_mandate;
+        if (!raw) return error(c, 400, "mandate_required", "This checkout needs ap2.checkout_mandate.");
+        try {
+          const verified = await ap2.verifyCheckoutMandate(raw, { ucpAgent: agent, audience: core.base, expect: terms(s) });
+          mandate = { raw, checkoutHash: verified.checkoutHash! };
+        } catch (err) {
+          if (err instanceof Ap2Error) return error(c, 400, err.code, err.message);
+          throw err;
+        }
+      }
 
       const order = core.createOrder({ items: s.lines.map((l) => ({ id: l.id, qty: l.qty })), email: s.email!, name: s.name ?? undefined, rail: "ucp" });
       let paymentRef: string;
@@ -371,7 +412,17 @@ export function mountUcp(app: Hono, core: ProtocolCore, config: { stripe?: SptSt
         core.cancelUnpaid(order.id);
         return error(c, 402, "payment_declined", String((err as Error).message));
       }
-      await core.markPaid(order.id, { paymentRef, meta: { protocol: "ucp", checkoutId: s.id, handler: chosen.handler_id, agent } });
+      await core.markPaid(order.id, {
+        paymentRef,
+        meta: {
+          protocol: "ucp",
+          checkoutId: s.id,
+          handler: chosen.handler_id,
+          agent,
+          // Kept as evidence that the buyer authorised exactly these terms.
+          ...(mandate ? { ap2CheckoutMandate: mandate.raw, ap2CheckoutHash: mandate.checkoutHash } : {}),
+        },
+      });
       s.status = "completed";
       s.orderId = order.id;
       save(s);

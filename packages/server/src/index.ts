@@ -29,6 +29,7 @@ import { challengeIdOf, createMppRail, MPP_PAY_ROUTE } from "./rails/mpp.js";
 import { sptClient } from "./rails/spt.js";
 import { mountUcp } from "./ucp.js";
 import { mountAcp } from "./acp.js";
+import { createAp2 } from "./ap2.js";
 import type { OrderInput, ProtocolCore } from "./protocol.js";
 import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
@@ -37,6 +38,7 @@ import { clientKey, createFailureThrottle, sensitiveHeaders } from "./guard.js";
 export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X402RailConfig } from "./config.js";
 export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
 export type { AcpConfig } from "./acp.js";
+export type { Ap2Config, PlatformProfile } from "./ap2.js";
 export type { SptStripeConfig } from "./rails/spt.js";
 export { SqliteStore, type Store, type StoredEmail } from "./store.js";
 export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
@@ -674,7 +676,12 @@ export function createCollect(config: CollectConfig) {
     },
     passUrl,
   };
-  if (config.ucp) mountUcp(app, protocolCore, { stripe: ucpStripe ? { ...config.ucp.stripe, client: ucpStripe } : undefined });
+  if (config.ucp) {
+    mountUcp(app, protocolCore, {
+      stripe: ucpStripe ? { ...config.ucp.stripe, client: ucpStripe } : undefined,
+      ap2: config.ucp.ap2 ? createAp2(config.ucp.ap2) : null,
+    });
+  }
   if (config.acp) eventHooks.push(mountAcp(app, protocolCore, config.acp, acpStripe).onEvent);
 
   app.get("/p/:passId", async (c) => {
