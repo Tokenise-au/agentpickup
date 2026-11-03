@@ -54,7 +54,7 @@ export type { OrderInput } from "./protocol.js";
 class InputError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 404 | 409 = 400,
+    readonly status: 400 | 404 | 409 | 503 = 400,
   ) {
     super(message);
   }
@@ -74,6 +74,8 @@ export function publicOrder(o: Order) {
     paidAt: o.paidAt,
     readyAt: o.readyAt,
     collectedAt: o.collectedAt,
+    // What an x402 payer pays, when the shop prices in another currency.
+    ...(o.usdCents != null ? { usdCents: o.usdCents } : {}),
   };
 }
 
@@ -94,8 +96,10 @@ export function createCollect(config: CollectConfig) {
   const mpp = config.payments.mpp
     ? createMppRail(config.payments.mpp, { realm: new URL(base).host, currency, merchantName: merchant.name })
     : null;
-  if (x402 && currency !== "usd") {
-    throw new Error("x402 prices are in USD (USDC). Set currency to 'usd' or leave x402 off.");
+  if (x402 && currency !== "usd" && !x402.toUsdCents) {
+    throw new Error(
+      `x402 settles in USDC. A shop pricing in ${currency.toUpperCase()} needs payments.x402.toUsdCents to convert its prices, or leave x402 off.`,
+    );
   }
   const catalog = new Map(config.catalog.map((item) => [item.id, item]));
 
@@ -183,6 +187,21 @@ export function createCollect(config: CollectConfig) {
       if (!Number.isInteger(qty) || qty < 1 || qty > 20) throw new InputError("Quantities must be 1 to 20.");
       return { id, name: product.name, qty, unitCents: product.priceCents };
     });
+    const totalCents = items.reduce((sum, i) => sum + i.qty * i.unitCents, 0);
+    // x402 settles in USDC: a shop pricing in another currency fixes this order's USD price now.
+    let usdCents: number | null = null;
+    if (rail === "x402" && currency !== "usd") {
+      const converted = await Promise.resolve()
+        .then(() => x402!.toUsdCents!(totalCents, currency))
+        .catch((err) => {
+          console.error("[collect] toUsdCents failed:", err);
+          return NaN;
+        });
+      usdCents = Math.round(converted);
+      if (!Number.isFinite(usdCents) || usdCents < 1) {
+        throw new InputError("This order can't be priced in USD right now. Try again shortly.", 503);
+      }
+    }
     const now = Date.now();
     const order: Order = {
       id: newId("ord"),
@@ -195,7 +214,7 @@ export function createCollect(config: CollectConfig) {
             ? (config.payments.card?.captureMode ?? "hold")
             : "hold",
       items,
-      totalCents: items.reduce((sum, i) => sum + i.qty * i.unitCents, 0),
+      totalCents,
       currency,
       customerEmail: email,
       customerName: input.name?.trim().slice(0, 60) || null,
@@ -209,6 +228,7 @@ export function createCollect(config: CollectConfig) {
       readyAt: null,
       collectedAt: null,
       refundDue: false,
+      usdCents,
     };
     await store.insertOrder(order);
     void emit("order.created", order);
@@ -601,7 +621,8 @@ export function createCollect(config: CollectConfig) {
         baseUrl: base,
         priceFor: async (id) => {
           const o = await store.getOrder(id);
-          return o && o.status === "awaiting_payment" && o.rail === "x402" ? `$${(o.totalCents / 100).toFixed(2)}` : null;
+          const cents = o?.usdCents ?? o?.totalCents ?? 0;
+          return o && o.status === "awaiting_payment" && o.rail === "x402" ? `$${(cents / 100).toFixed(2)}` : null;
         },
       }),
     );

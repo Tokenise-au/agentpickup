@@ -58,6 +58,7 @@ const COLUMNS: Record<keyof Order, string> = {
   readyAt: "ready_at",
   collectedAt: "collected_at",
   refundDue: "refund_due",
+  usdCents: "usd_cents",
 };
 
 export function toRow(order: Partial<Order>): Record<string, string | number | null> {
@@ -93,6 +94,7 @@ export function fromRow(row: Record<string, unknown>): Order {
     readyAt: row.ready_at == null ? null : Number(row.ready_at),
     collectedAt: row.collected_at == null ? null : Number(row.collected_at),
     refundDue: Number(row.refund_due) === 1,
+    usdCents: row.usd_cents == null ? null : Number(row.usd_cents),
   };
 }
 
@@ -123,7 +125,8 @@ export class SqliteStore implements Store {
         paid_at INTEGER,
         ready_at INTEGER,
         collected_at INTEGER,
-        refund_due INTEGER NOT NULL DEFAULT 0
+        refund_due INTEGER NOT NULL DEFAULT 0,
+        usd_cents INTEGER
       );
       CREATE INDEX IF NOT EXISTS orders_status ON orders (status, collect_by);
       CREATE INDEX IF NOT EXISTS orders_pickup_code ON orders (pickup_code);
@@ -158,6 +161,9 @@ export class SqliteStore implements Store {
         at INTEGER NOT NULL
       );
     `);
+    // Columns added after 0.1, for databases made before them.
+    const have = new Set((this.db.prepare("PRAGMA table_info(orders)").all() as { name: string }[]).map((c) => c.name));
+    if (!have.has("usd_cents")) this.db.exec("ALTER TABLE orders ADD COLUMN usd_cents INTEGER");
   }
 
   insertOrder(order: Order): void {

@@ -42,6 +42,11 @@ export interface Order {
   collectedAt: number | null;
   /** True when money was taken but the order was never collected. */
   refundDue: boolean;
+  /**
+   * What an x402 payer pays, in US cents, fixed when the order was created. Set only when the shop prices
+   * in another currency; otherwise x402 pays totalCents.
+   */
+  usdCents?: number | null;
 }
 
 export type CollectEventType =
@@ -51,6 +56,7 @@ export type CollectEventType =
   | "order.collected"
   | "order.expired"
   | "order.cancelled"
+  | "order.refunded"
   | "pass.emailed";
 
 export interface CollectEvent {

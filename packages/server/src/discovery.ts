@@ -80,7 +80,11 @@ export function openApiDocument(o: {
         summary: "Pay for an order over x402. The pickup QR is emailed once the payment settles.",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         "x-payment-info": {
-          price: { mode: "dynamic", currency: "USD", min: usd(Math.min(...prices)), max: usd(Math.max(...prices) * 20 * 20) },
+          // A shop priced in another currency converts per order, so there's no fixed USD range to state.
+          price:
+            o.currency === "usd"
+              ? { mode: "dynamic", currency: "USD", min: usd(Math.min(...prices)), max: usd(Math.max(...prices) * 20 * 20) }
+              : { mode: "dynamic", currency: "USD" },
           protocols: [{ x402: {} }],
         },
         responses: {

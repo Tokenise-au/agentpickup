@@ -54,6 +54,12 @@ export interface X402RailConfig {
   facilitatorUrl?: string;
   /** A facilitator client of your own (a self-hosted facilitator, or a fake in tests). Overrides facilitatorUrl. */
   facilitator?: FacilitatorClient;
+  /**
+   * For shops that price in another currency: convert an order total to US cents for USDC, from whatever
+   * rate source you trust. Called once when an x402 order is created; the result is fixed on the order, so
+   * the quote and the payment always agree. Required when `currency` isn't "usd".
+   */
+  toUsdCents?: (amountCents: number, currency: string) => number | Promise<number>;
 }
 
 export interface CollectConfig {
@@ -61,7 +67,7 @@ export interface CollectConfig {
   baseUrl: string;
   merchant: MerchantConfig;
   catalog: CatalogItem[];
-  /** ISO currency for card payments. x402 prices are in USD (USDC). */
+  /** ISO currency the catalog is priced in. x402 settles in USDC: see payments.x402.toUsdCents for other currencies. */
   currency?: string;
   store: Store;
   mailer: Mailer;

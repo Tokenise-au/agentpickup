@@ -7,7 +7,7 @@ import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { PGlite } from "@electric-sql/pglite";
-import { createCollect, outboxMailer, PostgresStore, SqliteStore, type CollectConfig, type Store } from "../src/index.js";
+import { createCollect, outboxMailer, PostgresStore, SqliteStore, type CollectConfig, type Store, type X402RailConfig } from "../src/index.js";
 
 /**
  * SQLite by default. postgres.test.ts runs every test file again on Postgres: one in-process PGlite for the
@@ -69,7 +69,7 @@ export const CATALOG = [
   { id: "croissant", name: "Croissant", priceCents: 500 },
 ];
 
-export function setupShop(extra: Partial<CollectConfig> = {}) {
+export function setupShop(extra: Partial<CollectConfig> = {}, x402Extra: Partial<X402RailConfig> = {}) {
   const store = testStore();
   const facilitator = new FakeFacilitator();
   const collect = createCollect({
@@ -79,7 +79,7 @@ export function setupShop(extra: Partial<CollectConfig> = {}) {
     store,
     mailer: outboxMailer(),
     signingKeyPem: generateSigningKeyPem(),
-    payments: { test: true, x402: { payTo: PAY_TO, network: NETWORK, facilitator } },
+    payments: { test: true, x402: { payTo: PAY_TO, network: NETWORK, facilitator, ...x402Extra } },
     exposeEmailPreview: true,
     allowOpenStaff: true,
     ...extra,

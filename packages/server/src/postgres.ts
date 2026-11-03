@@ -57,8 +57,11 @@ export class PostgresStore implements Store {
         paid_at BIGINT,
         ready_at BIGINT,
         collected_at BIGINT,
-        refund_due INTEGER NOT NULL DEFAULT 0
+        refund_due INTEGER NOT NULL DEFAULT 0,
+        usd_cents INTEGER
       )`,
+      // Columns added after 0.1, for tables made before them.
+      `ALTER TABLE ${orders} ADD COLUMN IF NOT EXISTS usd_cents INTEGER`,
       `CREATE INDEX IF NOT EXISTS ${orders}_status ON ${orders} (status, collect_by)`,
       `CREATE INDEX IF NOT EXISTS ${orders}_pickup_code ON ${orders} (pickup_code)`,
       // seq keeps insertion order for rows written in the same millisecond.
