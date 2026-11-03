@@ -50,7 +50,7 @@ body.ap-signup {
 
 .ap-signup label { font: 500 12.5px var(--mono); color: var(--muted); }
 .ap-signup label.check { font: 400 15px Archivo, sans-serif; color: var(--text-2); }
-.ap-signup input[type=email], .ap-signup input[type=url], .ap-signup input[name=wallet], .ap-signup select {
+.ap-signup input[type=email], .ap-signup input[type=url], .ap-signup input[type=text], .ap-signup input[name=wallet], .ap-signup select {
   font: 15px Archivo, sans-serif; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; width: 100%;
 }
 .ap-signup input::placeholder { color: #5b616b; }
@@ -66,4 +66,10 @@ body.ap-signup {
 .ap-signup .option { background: var(--bg); border-color: var(--line); border-radius: 10px; }
 .ap-signup .option:has(input:checked) { border-color: var(--lime); }
 .ap-signup .key code { font-family: var(--mono); color: var(--lime); }
+.ap-signup input[type=color] { width: 64px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 3px; }
+
+/* Seller page: the pass preview keeps the shop's own colours; around it, ours. */
+.ap-signup .brand { padding: 16px; border: 1px solid var(--hair); border-radius: 12px; background: var(--bg); }
+.ap-signup .hint { border-left-color: var(--lime); color: var(--text-2); }
+.ap-signup .preview { border-color: transparent; box-shadow: 0 18px 40px rgba(0, 0, 0, .4); }
 .ap-signup ol { color: var(--text-2); }

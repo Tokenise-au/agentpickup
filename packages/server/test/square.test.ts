@@ -19,6 +19,9 @@ type SqOrder = {
   location_id: string;
   reference_id?: string;
   source?: { name: string };
+  ticket_name?: string;
+  /** Paid with no payment: Square's PayOrder on a $0 order. */
+  paidWithoutPayment?: boolean;
   line_items: { catalog_object_id?: string; name?: string; quantity: string; base_price_money?: { amount: number } }[];
   fulfillments: Fulfillment[];
   total_money: { amount: number; currency: string };
@@ -33,6 +36,8 @@ class FakeSquare {
   refunds: Record<string, unknown>[] = [];
   calls: string[] = [];
   failNext = 0;
+  /** The seller's online checkout button colour; Square's blue until they change it. */
+  checkoutColour = "#006aff";
   private idem = new Map<string, unknown>();
   catalog: unknown[] = [
     {
@@ -113,6 +118,9 @@ class FakeSquare {
     };
 
     if (method === "GET" && url.pathname === `/v2/locations/${LOCATION}`) return reply(200, { location: this.location });
+    if (method === "GET" && url.pathname === `/v2/online-checkout/location-settings/${LOCATION}`) {
+      return reply(200, { location_settings: { location_id: LOCATION, branding: { header_type: "BUSINESS_NAME", button_color: this.checkoutColour, button_shape: "ROUNDED" } } });
+    }
     if (method === "GET" && url.pathname === "/v2/catalog/list") {
       // Two pages, to exercise the cursor.
       const cursor = url.searchParams.get("cursor");
@@ -137,6 +145,17 @@ class FakeSquare {
         total_money: { amount: total, currency: "AUD" },
       };
       this.orders.set(id, order);
+      return remember({ order });
+    }
+    const pay = url.pathname.match(/^\/v2\/orders\/([^/]+)\/pay$/);
+    if (pay && method === "POST") {
+      const order = this.orders.get(pay[1]);
+      if (!order) return error(404, "NOT_FOUND", "order");
+      if (body.order_version !== undefined && body.order_version !== order.version) return error(400, "VERSION_MISMATCH", "stale version");
+      // As Square answers: only a $0 order can be paid without a payment.
+      if (!body.payment_ids?.length && order.total_money.amount !== 0) return error(400, "BAD_REQUEST", "payment_ids are required for a non-zero order");
+      order.paidWithoutPayment = true;
+      order.version++;
       return remember({ order });
     }
     const m = url.pathname.match(/^\/v2\/orders\/([^/]+)$/);
@@ -221,7 +240,7 @@ test("square: the venue's Square menu becomes the shop's menu", async () => {
   );
 });
 
-test("square: a paid order shows in Square as a paid pickup order", async () => {
+test("square: a test order shows in Square as a paid pickup order at $0, marked TEST, so it isn't a sale", async () => {
   const { square, shop } = squareShop();
   await shop.collect.ready;
   const orderId = await testOrder(shop, [{ id: "VAR_FW_LRG", qty: 2 }, { id: "VAR_CR", qty: 1 }]);
@@ -230,18 +249,23 @@ test("square: a paid order shows in Square as a paid pickup order", async () => 
   const [sq] = [...square.orders.values()];
   assert.equal(sq.reference_id, orderId);
   assert.equal(sq.source?.name, "agentPickup");
-  assert.deepEqual(sq.line_items.map((l) => [l.catalog_object_id, l.quantity]), [["VAR_FW_LRG", "2"], ["VAR_CR", "1"]]);
+  assert.equal(sq.ticket_name, "TEST · agentPickup");
+  assert.deepEqual(
+    sq.line_items.map((l) => [l.catalog_object_id, l.name, l.quantity, l.base_price_money?.amount]),
+    [[undefined, "Flat white (Large)", "2", 0], [undefined, "Croissant", "1", 0]],
+    "custom $0 lines, so the venue's sales, tax and stock counts don't move",
+  );
+  assert.equal(sq.total_money.amount, 0);
   assert.equal(sq.fulfillments[0].type, "PICKUP");
   assert.equal(sq.fulfillments[0].state, "PROPOSED");
   const order = (await shop.store.getOrder(orderId))!;
   assert.deepEqual((sq.fulfillments[0].pickup_details as { recipient: { display_name: string } }).recipient, { display_name: "Robin" });
-  assert.match(String((sq.fulfillments[0].pickup_details as { note: string }).note), new RegExp(order.pickupCode!));
+  const note = String((sq.fulfillments[0].pickup_details as { note: string }).note);
+  assert.match(note, /^TEST ORDER: no money moved\./);
+  assert.match(note, new RegExp(order.pickupCode!));
 
-  assert.equal(square.payments.length, 1);
-  const pay = square.payments[0] as { source_id: string; amount_money: { amount: number }; external_details: { type: string; source: string } };
-  assert.equal(pay.source_id, "EXTERNAL");
-  assert.equal(pay.amount_money.amount, 1840);
-  assert.deepEqual([pay.external_details.type, pay.external_details.source], ["OTHER", "agentPickup"]);
+  assert.equal(square.payments.length, 0, "no payment recorded");
+  assert.equal(sq.paidWithoutPayment, true, "but paid, so it shows in Square POS as ready to make");
 });
 
 test("square: an agent's USDC payment is recorded in Square as crypto", async () => {
@@ -255,8 +279,12 @@ test("square: an agent's USDC payment is recorded in Square as crypto", async ()
   const { orderId, paid } = await agentBuys(usdShop, makeAgent(), [{ id: "VAR_CR", qty: 1 }]);
   assert.equal(paid.status, 200);
   await usdShop.collect.flushConnectors();
-  const pay = square.payments.at(-1) as { external_details: { type: string; source_id: string }; reference_id: string };
+  const [sq] = [...square.orders.values()];
+  assert.deepEqual(sq.line_items.map((l) => [l.catalog_object_id, l.quantity]), [["VAR_CR", "1"]], "real orders use the venue's own menu items");
+  assert.equal(sq.ticket_name, undefined);
+  const pay = square.payments.at(-1) as { external_details: { type: string; source_id: string }; reference_id: string; amount_money: { amount: number } };
   assert.equal(pay.reference_id, orderId);
+  assert.equal(pay.amount_money.amount, 600, "the full price, recorded as paid outside Square");
   assert.equal(pay.external_details.type, "CRYPTO");
   assert.match(pay.external_details.source_id, /^0x[0-9a-f]{64}$/, "the settlement transaction");
 });
@@ -349,7 +377,7 @@ test("square: when Square is down, the customer is unaffected and the order stil
   assert.equal((await shop.store.getOrder(orderId))!.status, "paid", "paid before Square answered");
   await shop.collect.flushConnectors();
   assert.equal(square.orders.size, 1);
-  assert.equal(square.payments.length, 1);
+  assert.equal([...square.orders.values()][0].paidWithoutPayment, true);
 });
 
 test("connector API: a platform pushes the menu, reads paid orders and marks them ready", async () => {
@@ -443,6 +471,26 @@ test("square: the venue's logo, address, hours, contact details and map position
   assert.match(email.html, /<img src="https:\/\/images\.square\.test\/logo-wide\.png"/);
 });
 
+test("square: the brand colour comes from the seller's Square checkout, unless it's still Square's blue or the shop set its own", async () => {
+  const colourOf = async (checkoutColour: string, own?: string) => {
+    const square = new FakeSquare();
+    square.checkoutColour = checkoutColour;
+    const shop = setupShop({
+      currency: "aud",
+      payments: { test: true, card: undefined },
+      ...(own ? { merchant: { name: "Test Café", fromEmail: "orders@shop.test", brandColor: own } } : {}),
+      connectors: [squareConnector({ accessToken: TOKEN, locationId: LOCATION, fetch: square.fetch })],
+    });
+    await shop.collect.ready;
+    const { merchant } = (await (await shop.call("/api/catalog")).json()) as { merchant: { brandColor?: string } };
+    shop.collect.stop();
+    return merchant.brandColor ?? null;
+  };
+  assert.equal(await colourOf("#006AFF"), null, "Square's default blue isn't the seller's colour");
+  assert.equal(await colourOf("#9A3412"), "#9a3412");
+  assert.equal(await colourOf("#9A3412", "#14532d"), "#14532d", "a colour the shop set wins");
+});
+
 test("square: the shop's own settings win over Square's, and the synced profile survives a restart", async () => {
   const square = new FakeSquare();
   const store = testStore();
@@ -526,12 +574,13 @@ test("square: a group order reaches Square once, as one pickup order with each l
   assert.equal(square.orders.size, 1);
   const [sq] = [...square.orders.values()];
   assert.deepEqual(
-    sq.line_items.map((l) => [l.catalog_object_id, (l as { note?: string }).note]),
+    sq.line_items.map((l) => [l.name, (l as { note?: string }).note, l.base_price_money?.amount]),
     [
-      ["VAR_FW_REG", "for Sam"],
-      ["VAR_CR", "for Alex"],
+      ["Flat white (Regular)", "for Sam", 0],
+      ["Croissant", "for Alex", 0],
     ],
   );
   assert.equal((sq.fulfillments[0].pickup_details as { recipient: { display_name: string } }).recipient.display_name, "Coffee run (Robin)");
-  assert.equal((square.payments[0] as { amount_money: { amount: number } }).amount_money.amount, 520 + 600);
+  assert.equal(sq.ticket_name, "TEST · agentPickup", "every share was a test payment, so the group's order is a test too");
+  assert.equal(square.payments.length, 0);
 });

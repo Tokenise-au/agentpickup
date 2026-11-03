@@ -215,14 +215,17 @@ const pickup = createCollect({
 - The Square menu becomes the shop's menu (items at that location, in its currency, at a fixed price).
 - A paid order appears in Square as a pickup order for the customer's name, with the payment recorded as
   taken outside Square (`CRYPTO` for USDC, `CARD` for cards), so it shows as fully paid.
+- A test order (no money moved, or a group of test payments) appears at $0 with the ticket name
+  `TEST · agentPickup` and "TEST ORDER: no money moved" in its note: custom $0 lines rather than menu items,
+  marked paid with no payment, so staff see it but the venue's sales, tax and stock counts don't move.
 - Staff marking it ready in Square emails the customer: subscribe to `order.fulfillment.updated` in the
   Square Developer Console at `<baseUrl>/connect/square/webhook` and set `webhookSignatureKey`.
 - Scanning the QR completes the pickup and closes the order in Square. A no-show cancels the pickup,
   records a refund in Square when agentPickup gave the money back, and closes the order (Square won't
   cancel an order once a payment is recorded).
 - The venue's Square location fills in its profile: logo, address, opening hours, support email, website,
-  phone, time zone and map position. The shop's own settings win; Square fills what they leave out, so a
-  seller only picks a brand colour. It refreshes hourly and on `POST /connect/v1/catalog/sync`, and the last
+  phone, time zone and map position, and the brand colour from the seller's online checkout branding (unless
+  it's still Square's blue). The shop's own settings win; Square fills what they leave out. It refreshes hourly and on `POST /connect/v1/catalog/sync`, and the last
   copy is kept, so a Square outage at start doesn't blank it. `syncProfile: false` turns it off.
 - Check your setup against a sandbox: `node --conditions=source --import tsx scripts/square-sandbox-check.ts`.
 
@@ -355,8 +358,11 @@ const host = createVenueHost({
 5. **Done.** The staff key, shown once, and how orders flow: they appear in Square, staff mark them ready
    there, and scan the customer's QR to hand over.
 
-Sellers come back to `/seller` with Sign in with Square to change the brand colour, wallet, test mode and
-directory listing, make a new staff key, or disconnect (the last venue revokes Square access too).
+Sellers come back to `/seller` with Sign in with Square to change the shop's name, brand colour, wallet, test
+mode and directory listing, make a new staff key, or disconnect (the last venue revokes Square access too).
+The page previews the pickup pass in the shop's name, logo and colour, says when the name is still Square's
+placeholder ("My Business") or there's no logo yet, and keeps following Square's colour until the seller picks
+one. Pages, buttons and emails pick dark or white text to suit the colour.
 
 The pages have a plain light and dark look of their own. To match your site, set `signup.pageHead` to the
 fonts and stylesheet to add to every page's `<head>`; pages carry `body.ap-signup` to scope your rules (the

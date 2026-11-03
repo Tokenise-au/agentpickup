@@ -403,9 +403,11 @@ export function createVenueHost(cfg: VenueHostConfig) {
   }
 
   /** What the seller page shows a seller about one of their venues. */
-  function sellerView(record: VenueRecord): SellerVenue {
+  async function sellerView(record: VenueRecord): Promise<SellerVenue> {
     const s = record.settings;
     const url = `${base}${prefix}/${record.slug}`;
+    // What customers see: the venue's own settings, with Square's logo and colour filling the gaps.
+    const shown = await live.get(record.slug)?.listing().catch(() => null);
     return {
       slug: record.slug,
       name: s.merchant.name,
@@ -416,6 +418,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
       squareLocationId: s.square?.locationId ?? null,
       squareConnected: Boolean(s.square && !s.square.revokedAt),
       brandColor: s.merchant.brandColor ?? null,
+      shown: { name: shown?.name ?? s.merchant.name, logoUrl: shown?.logoUrl ?? s.merchant.logoUrl ?? null, brandColor: shown?.brandColor ?? s.merchant.brandColor ?? null },
       wallet: s.payments?.x402?.payTo ?? null,
       test: Boolean(s.payments?.test),
       listed: s.listed !== false,
@@ -656,7 +659,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
       seal: (value) => box.seal(value),
       open: (sealed) => box.open(sealed),
       ready,
-      venuesOwnedBy: async (merchantId) => (await venuesOwnedBy(merchantId)).map((r) => sellerView(r)),
+      venuesOwnedBy: async (merchantId) => Promise.all((await venuesOwnedBy(merchantId)).map((r) => sellerView(r))),
       createSquareVenue,
       useSquareTokens,
       patchVenue: async (slug, change) => {

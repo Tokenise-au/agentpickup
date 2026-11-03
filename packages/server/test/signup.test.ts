@@ -79,6 +79,12 @@ class FakeSquare {
       return reply(200, { order });
     }
     if (url.pathname === "/v2/payments") return reply(200, { payment: { id: "PAY1" } });
+    const pay = url.pathname.match(/^\/v2\/orders\/(\w+)\/pay$/);
+    if (pay) {
+      const order = this.orders.get(pay[1])!;
+      order.version++;
+      return reply(200, { order });
+    }
     const ord = url.pathname.match(/^\/v2\/orders\/(\w+)$/);
     if (ord) {
       const order = this.orders.get(ord[1])!;
@@ -283,6 +289,30 @@ test("signup: after a switch to a production Square app, sandbox venues aren't r
   assert.deepEqual(await prod.host.renewSquareTokens(Date.now() + 8 * DAY), []);
   assert.deepEqual(sandbox.square.calls.filter((c) => c.endsWith("/oauth2/token")), [], "the production app can't renew a sandbox seller's tokens, so it doesn't try");
   prod.host.stop();
+});
+
+test("seller page: previews the pass in the shop's branding, renames the shop, and an untouched colour box picks no colour", async () => {
+  const { host } = setup();
+  const b = browser(host.app);
+  const { slug, csrf } = await signUp(b);
+  const brandOf = async () => ((await (await host.app.request(`${HOST}/v/${slug}/api/catalog`)).json()) as { merchant: { name: string; brandColor?: string } }).merchant;
+
+  const page = await (await b.go("/seller")).text();
+  assert.match(page, /class="preview"/);
+  assert.match(page, /class="pv-mono">CC</, "no logo: the shop's initials");
+  assert.match(page, /No logo yet/);
+
+  // Saving with the colour box as it came keeps following Square's colour.
+  await b.form(`/seller/venues/${slug}`, { csrf, name: "  Corner   Café on Crown ", brandColor: "#111827", brandColorWas: "#111827", wallet: WALLET });
+  const renamed = await brandOf();
+  assert.equal(renamed.name, "Corner Café on Crown");
+  assert.equal(renamed.brandColor, undefined, "no colour picked");
+  await b.form(`/seller/venues/${slug}`, { csrf, name: "Corner Café on Crown", brandColor: "#9A3412", brandColorWas: "#111827", wallet: WALLET });
+  assert.equal((await brandOf()).brandColor, "#9a3412");
+
+  await b.form(`/seller/venues/${slug}`, { csrf, name: "My Business", brandColor: "#9a3412", brandColorWas: "#9a3412", wallet: WALLET });
+  assert.match(await (await b.go("/seller")).text(), /is Square&#39;s placeholder|is Square's placeholder/);
+  host.stop();
 });
 
 test("seller page: only the seller who connected a venue can change it, and disconnecting the last one ends Square access", async () => {

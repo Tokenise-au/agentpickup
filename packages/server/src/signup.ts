@@ -6,7 +6,7 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { isAddress } from "viem";
 import type { SquareLocationSummary, SquareOAuth, SquareOAuthConfig, SquareTokens } from "./connectors/square-oauth.js";
-import { esc } from "./format.js";
+import { esc, initialsOf, inkOn } from "./format.js";
 import { logoSvg } from "./logos.js";
 import type { Store } from "./store.js";
 import type { VenueInput } from "./venues.js";
@@ -43,7 +43,10 @@ export interface SellerVenue {
   running: boolean;
   squareLocationId: string | null;
   squareConnected: boolean;
+  /** The colour the seller picked here, if any. */
   brandColor: string | null;
+  /** What customers see now: the seller's own settings, with Square's logo and colour filling the gaps. */
+  shown: { name: string; logoUrl: string | null; brandColor: string | null };
   wallet: string | null;
   test: boolean;
   listed: boolean;
@@ -91,6 +94,24 @@ interface Session {
 const SESSION_COOKIE = "ap_seller";
 const STATE_COOKIE = "ap_square_state";
 const SESSION_MS = 2 * 3600_000;
+/** The name Square gives a business nobody has named yet. */
+const SQUARE_PLACEHOLDER_NAMES = new Set(["my business", "default test account"]);
+/** The colour pages use when a venue has none of its own and Square gave none. */
+const DEFAULT_BRAND = "#111827";
+
+/** A small pickup pass in the venue's name, logo and colour: what a customer sees. */
+function brandPreview(shown: SellerVenue["shown"]): string {
+  const colour = shown.brandColor ?? DEFAULT_BRAND;
+  const on = inkOn(colour);
+  // The brand colour as text on white only when it's dark enough to read there, as on the real pass.
+  const text = on === "#ffffff" ? colour : "#14161a";
+  const mark = shown.logoUrl ? `<img src="${esc(shown.logoUrl)}" alt="">` : `<span class="pv-mono">${esc(initialsOf(shown.name))}</span>`;
+  return `<figure class="preview" style="--b:${esc(colour)};--on:${on};--bt:${esc(text)}" aria-label="Preview of the pickup pass">
+    <div class="pv-head">${mark}<b>${esc(shown.name)}</b></div>
+    <div class="pv-body"><span class="pv-pill">Ready to collect</span><span class="pv-qr" aria-hidden="true"></span><span class="pv-code">K7P4QX</span><span class="pv-btn">Open my pass</span></div>
+  </figure>`;
+}
+
 const OTHER_SYSTEMS = ["Lightspeed", "Toast", "Clover", "Shopify POS", "Doshii", "Deliverect", "Something else"];
 const NETWORKS: Record<string, string> = { "eip155:8453": "Base", "eip155:84532": "Base Sepolia, the test network" };
 
@@ -417,15 +438,29 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     const cards = venues
       .map((v) => {
         const action = `/seller/venues/${encodeURIComponent(v.slug)}`;
+        const colour = v.shown.brandColor ?? DEFAULT_BRAND;
+        const hints = [
+          SQUARE_PLACEHOLDER_NAMES.has(v.name.trim().toLowerCase()) ? `"${esc(v.name)}" is Square's placeholder. Type your shop's name below.` : "",
+          v.shown.logoUrl
+            ? ""
+            : `No logo yet. Add one to this location in your <a href="https://squareup.com/dashboard/locations" target="_blank" rel="noopener">Square Dashboard</a>; it shows here within the hour, or when you save.`,
+          !v.brandColor && v.shown.brandColor ? "The colour comes from your Square online checkout. Pick another below to change it here." : "",
+        ].filter(Boolean);
         return `<section class="card" id="${esc(v.slug)}">
           <div class="row spread"><h2>${esc(v.name)}</h2><span class="pill">${v.test ? "Test mode" : "Live"}</span></div>
           <p class="muted small">${v.squareConnected ? "Connected to Square" : "Square disconnected: sign in again to reconnect"} · ${v.listed ? "In the directory" : "Not in the directory"}</p>
           ${saved === v.slug ? `<p class="ok small">Saved.</p>` : ""}
           ${problem?.slug === v.slug ? `<p class="bad small">${esc(problem.text)}</p>` : ""}
           ${shownKey?.slug === v.slug ? `<section class="key"><span class="muted small">New staff key, shown once</span><code>${esc(shownKey.key)}</code></section>` : ""}
+          <div class="brand">${brandPreview(v.shown)}
+            <div class="stack"><span class="muted small">How customers see you, on the pass, the emails and the staff scanner.</span>
+            ${hints.map((h) => `<p class="hint small">${h}</p>`).join("")}</div>
+          </div>
           <form method="post" action="${action}" class="stack">
             <input type="hidden" name="csrf" value="${csrf}">
-            <label>Brand colour <input type="color" name="brandColor" value="${esc(v.brandColor ?? "#111827")}"></label>
+            <label>Shop name <input type="text" name="name" maxlength="80" required value="${esc(v.name)}" autocomplete="organization"></label>
+            <input type="hidden" name="brandColorWas" value="${esc(colour)}">
+            <label>Brand colour <input type="color" name="brandColor" value="${esc(colour)}"></label>
             <label>Wallet for USDC <input name="wallet" placeholder="0x…" spellcheck="false" autocomplete="off" maxlength="42" value="${esc(v.wallet ?? "")}"></label>
             <label class="check"><input type="checkbox" name="test" value="1"${v.test ? " checked" : ""}> Test mode</label>
             <label class="check"><input type="checkbox" name="listed" value="1"${v.listed ? " checked" : ""}> Show me in the agent directory</label>
@@ -459,12 +494,15 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     const form = await c.req.parseBody();
     const venue = s && csrfOk(s, form.csrf) ? await owns(s, slug) : null;
     if (!s || !venue) return c.redirect("/seller");
-    const colour = String(form.brandColor ?? "");
+    const colour = String(form.brandColor ?? "").toLowerCase();
+    // An untouched colour box still submits; keep following Square's colour until the seller picks one.
+    const picked = /^#[0-9a-f]{6}$/.test(colour) && (venue.brandColor !== null || colour !== String(form.brandColorWas ?? "").toLowerCase());
+    const name = String(form.name ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
     const payments = paymentsChange(venue, String(form.wallet ?? ""), form.test === "1");
     if ("problem" in payments) return c.html(await sellerPage(s, null, undefined, { slug, text: payments.problem }), 400);
     await deps.patchVenue(slug, (v) => ({
       ...payments.apply(v),
-      merchant: { ...v.merchant, ...(/^#[0-9a-fA-F]{6}$/.test(colour) ? { brandColor: colour } : {}) },
+      merchant: { ...v.merchant, ...(name ? { name } : {}), ...(picked ? { brandColor: colour } : {}) },
       listed: form.listed === "1",
     }));
     return c.redirect(`/seller?saved=${encodeURIComponent(slug)}#${encodeURIComponent(slug)}`);
@@ -533,7 +571,7 @@ a { color:inherit; text-underline-offset:3px; }
 .row.spread { justify-content:space-between; }
 label { display:grid; gap:6px; font-size:14px; font-weight:600; }
 label.check { display:flex; gap:10px; align-items:flex-start; font-weight:400; }
-input[type=email], input[type=url], input[name=wallet], select { font:inherit; font-size:15px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); width:100%; }
+input[type=email], input[type=url], input[type=text], input[name=wallet], select { font:inherit; font-size:15px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); width:100%; }
 input[type=color] { width:56px; height:36px; border:1px solid var(--line); border-radius:8px; background:none; padding:2px; }
 .btn { display:inline-block; font:inherit; font-size:15px; font-weight:600; text-decoration:none; text-align:center; padding:11px 16px; border-radius:10px; border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); cursor:pointer; }
 .btn.ghost { background:transparent; color:var(--fg); border-color:var(--line); }
@@ -556,6 +594,19 @@ details summary { cursor:pointer; }
 .choice .logo { width:18px; height:18px; }
 .choice:has(input:checked) { border-color:var(--fg); }
 .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.brand { display:grid; grid-template-columns:200px minmax(0,1fr); gap:16px; align-items:start; }
+@media (max-width:520px) { .brand { grid-template-columns:1fr; } }
+.hint { border-left:3px solid var(--muted); padding-left:10px; color:var(--muted); }
+.preview { margin:0; border-radius:14px; overflow:hidden; border:1px solid var(--line); background:#f6f7f8; color:#111827; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+.pv-head { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--b); color:var(--on); font-size:14px; }
+.pv-head img { height:22px; max-width:90px; object-fit:contain; background:#fff; border-radius:5px; padding:2px; }
+.pv-head b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pv-mono { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; background:var(--on); color:var(--b); font-size:11px; font-weight:800; flex:0 0 auto; }
+.pv-body { display:grid; justify-items:center; gap:7px; padding:14px 12px 16px; background:#fff; margin:10px; border-radius:10px; }
+.pv-pill { font-size:11px; font-weight:600; color:#047857; background:#ecfdf5; border-radius:999px; padding:2px 8px; }
+.pv-qr { width:76px; height:76px; background:conic-gradient(#111827 25%, #fff 0 50%, #111827 0 75%, #fff 0) 0 0/19px 19px; border:5px solid #fff; outline:1px solid #e5e7eb; }
+.pv-code { font:700 15px ui-monospace,Menlo,Consolas,monospace; letter-spacing:.18em; color:var(--bt); }
+.pv-btn { font-size:12px; font-weight:600; background:var(--b); color:var(--on); border-radius:8px; padding:7px 12px; }
 </style>${o.head ?? ""}</head>
 <body class="ap-signup"><main>
 <header><a href="/">${esc(o.platform)}</a>${

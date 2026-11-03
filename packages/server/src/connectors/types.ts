@@ -24,6 +24,8 @@ export interface ConnectorContext {
 export interface ShopProfile {
   name?: string;
   logoUrl?: string;
+  /** "#rrggbb", for headers and buttons. */
+  brandColor?: string;
   supportEmail?: string;
   shopUrl?: string;
   phone?: string;

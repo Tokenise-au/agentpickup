@@ -1,6 +1,6 @@
 import type { Order } from "@agentpickup/core";
 import type { MerchantProfile } from "./config.js";
-import { esc, formatMoney, formatTime } from "./format.js";
+import { esc, formatMoney, formatTime, inkOn } from "./format.js";
 
 export interface MailAttachment {
   filename: string;
@@ -208,6 +208,7 @@ export function paymentSummary(order: Order, opts: { x402Network?: string } = {}
 export function renderPassEmail(input: PassEmailInput): { subject: string; html: string; text: string } {
   const { order, merchant, qrSrc, passUrl, kind } = input;
   const color = merchant.brandColor ?? "#111827";
+  const on = inkOn(color);
   const where = merchant.location.name;
   const withQr = kind !== "receipt";
   // The receipt details (how it was paid, the order number, the tax id) go in the first email only.
@@ -244,7 +245,7 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
     .join("");
   const header = merchant.logoUrl
     ? `<img src="${esc(merchant.logoUrl)}" alt="${esc(merchant.name)}" height="32" style="display:block;height:32px">`
-    : `<div style="font-size:18px;font-weight:700;color:#ffffff">${esc(merchant.name)}</div>`;
+    : `<div style="font-size:18px;font-weight:700;color:${on}">${esc(merchant.name)}</div>`;
   const payment = input.payment;
   const paidAt = order.paidAt ? `, ${formatTime(order.paidAt, input.timeZone)}` : "";
   const receiptLines = isReceipt
@@ -294,7 +295,7 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
     }<br>Collect by ${esc(formatTime(order.collectBy, input.timeZone))}
   </td></tr>
   <tr><td align="center" style="padding:4px 24px 28px">
-    <a href="${esc(passUrl)}" style="display:inline-block;background:${esc(color)};color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px">${withQr ? "Open my pass" : "Track my order"}</a>${
+    <a href="${esc(passUrl)}" style="display:inline-block;background:${esc(color)};color:${on};text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px">${withQr ? "Open my pass" : "Track my order"}</a>${
       withQr ? `
     <div style="font-size:12px;color:#9ca3af;margin-top:12px">Anyone with this code can collect the order, so keep it to yourself.</div>` : ""
     }

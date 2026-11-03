@@ -2,7 +2,8 @@
 // Square as a pickup order with the payment recorded as taken outside Square; marking it ready in Square
 // tells agentPickup (which emails the customer); scanning the QR completes it in Square. Square won't
 // cancel an order once a payment is recorded, so a no-show cancels the pickup, records a refund when the
-// money actually went back, and closes the order. The venue's Square location supplies its logo, address,
+// money actually went back, and closes the order. Test orders reach Square at $0 and labelled TEST, so staff
+// see them but the venue's sales and tax don't. The venue's Square location supplies its logo, address,
 // opening hours, contact details and map position.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Order } from "@agentpickup/core";
@@ -87,6 +88,9 @@ export function profileFromSquare(l: SquareLocation): ShopProfile {
   };
 }
 
+/** The button colour of an online checkout nobody has branded yet: Square's own blue, not the seller's. */
+const SQUARE_BLUE = "#006aff";
+
 const EXTERNAL_TYPE: Record<string, string> = { x402: "CRYPTO", card: "CARD", mpp: "CARD", ucp: "CARD", acp: "CARD", test: "OTHER", group: "OTHER" };
 
 export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
@@ -163,7 +167,11 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     return items;
   }
 
-  async function sendOrder(order: Order, ctx: ConnectorContext) {
+  /**
+   * The order as a paid pickup order in Square. A test order (no money moved) goes in at $0 with a TEST ticket:
+   * custom $0 lines rather than menu items, so it adds nothing to the venue's sales, tax or stock counts.
+   */
+  async function sendOrder(order: Order, ctx: ConnectorContext, test: boolean) {
     if (await ctx.linked(order.id)) return; // already in Square
     const currency = ctx.currency.toUpperCase();
     const created = await call<{ order: SquareOrder }>("POST", "/v2/orders", {
@@ -172,10 +180,13 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
         location_id: cfg.locationId,
         reference_id: order.id,
         source: { name: "agentPickup" },
+        ...(test ? { ticket_name: "TEST · agentPickup" } : {}),
         line_items: order.items.map((i) => ({
-          ...(squareIds.has(i.id)
-            ? { catalog_object_id: i.id, quantity: String(i.qty) }
-            : { name: i.name, quantity: String(i.qty), base_price_money: { amount: i.unitCents, currency } }),
+          ...(test
+            ? { name: i.name, quantity: String(i.qty), base_price_money: { amount: 0, currency } }
+            : squareIds.has(i.id)
+              ? { catalog_object_id: i.id, quantity: String(i.qty) }
+              : { name: i.name, quantity: String(i.qty), base_price_money: { amount: i.unitCents, currency } }),
           // A group order's lines say whose each one is.
           ...(i.note ? { note: i.note.slice(0, 2000) } : {}),
         })),
@@ -186,13 +197,19 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
             pickup_details: {
               recipient: { display_name: (order.customerName || "agentPickup customer").slice(0, 255) },
               schedule_type: "ASAP",
-              note: `agentPickup order. Pickup code ${order.pickupCode}: scan the customer's QR to hand over.`,
+              note: `${test ? "TEST ORDER: no money moved. " : ""}agentPickup order. Pickup code ${order.pickupCode}: scan the customer's QR to hand over.`,
             },
           },
         ],
       },
     });
     const sq = created.order;
+    if (test) {
+      // Square marks a $0 order paid with no payment at all, so it shows as paid and ready to make.
+      await call("POST", `/v2/orders/${encodeURIComponent(sq.id)}/pay`, { idempotency_key: `agentpickup-pay-${order.id}`, order_version: sq.version });
+      await ctx.link(order.id, sq.id, { fulfillmentUid: sq.fulfillments?.[0]?.uid ?? null, paymentId: null, squareTotal: 0 });
+      return;
+    }
     // Record the money agentPickup already took, so the order shows as paid in Square POS.
     const total = sq.total_money ?? { amount: order.totalCents, currency };
     const payment = await call<{ payment?: { id: string } }>("POST", "/v2/payments", {
@@ -259,7 +276,18 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
 
   async function fetchProfile(): Promise<ShopProfile> {
     const { location } = await call<{ location: SquareLocation }>("GET", `/v2/locations/${encodeURIComponent(cfg.locationId)}`);
-    return profileFromSquare(location);
+    const brandColor = await checkoutColour().catch(() => undefined);
+    return { ...profileFromSquare(location), ...(brandColor ? { brandColor } : {}) };
+  }
+
+  /** The colour the seller gave their Square online checkout, if they changed it from Square's blue. */
+  async function checkoutColour() {
+    const { location_settings } = await call<{ location_settings?: { branding?: { button_color?: string } } }>(
+      "GET",
+      `/v2/online-checkout/location-settings/${encodeURIComponent(cfg.locationId)}`,
+    );
+    const colour = location_settings?.branding?.button_color?.toLowerCase();
+    return colour && /^#[0-9a-f]{6}$/.test(colour) && colour !== SQUARE_BLUE ? colour : undefined;
   }
 
   return {
@@ -270,7 +298,9 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     async onEvent(event, order, ctx) {
       // One person's share of a group order arrives inside the group's combined order instead.
       if (event.type === "order.paid" && event.data?.groupMember) return;
-      if (event.type === "order.paid") await sendOrder(order, ctx);
+      // No money moved for a test payment, or for a group whose shares were all test payments.
+      const test = order.rail === "test" || (order.rail === "group" && event.data?.testOnly === true);
+      if (event.type === "order.paid") await sendOrder(order, ctx, test);
       else if (event.type === "order.ready") await advance(order, "PREPARED", ctx);
       else if (event.type === "order.collected") await advance(order, "COMPLETED", ctx);
       else if (event.type === "order.expired") {

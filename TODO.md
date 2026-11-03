@@ -89,7 +89,9 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [x] Dave: sandbox redirect URL and app keys (2026-11-03); app-level webhook `wbhk_d429…` registered at /connect/square/webhook
 - [x] Checked live on the sandbox: sign-up, agent order through the MCP, order in Square, ready in Square, QR email in ~1 s
 - [x] Production Square app (2026-11-04): redirect URL, production keys in Railway, `SQUARE_ENVIRONMENT=production`, its own webhook subscription. /connect now signs in at connect.squareup.com. Still to prove: one real sign-in end to end (Dave's own Square account)
-- [ ] Test-mode orders in a production Square account are recorded as paid sales (an OTHER payment), so they'd show in a café's sales reports and GST. Send them at $0 with a "test order, no money moved" label instead, checked in the sandbox first. Before any real café uses test mode
+- [x] Test orders reach Square at $0 (2026-11-04): custom $0 lines, ticket `TEST · agentPickup`, a "TEST ORDER: no money moved" note, paid with Square's PayOrder and no payment, so no sales, tax or stock move. Groups of test payments too. Checked against the real Square sandbox (AUD 0.00, nothing due, ready, completed and no-show all fine)
+- [x] Branding (2026-11-04): Square's checkout colour fills in when the seller hasn't picked one; the seller page has the shop's name, a pass preview and hints (placeholder name, no logo); pages, buttons and emails pick readable text for light colours; the pass is a ticket; the scanner says Staff
+- [ ] The shop name is copied from Square once, at sign-up; renaming in Square doesn't follow (sellers rename on the seller page). Decide whether it should follow Square until the seller edits it
 - [ ] Repeat the agent's USDC payment on a wizard venue once a wallet has Base Sepolia test USDC
 - Size: about 4-6 hours, built and tested on the Square sandbox first
 

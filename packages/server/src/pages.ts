@@ -2,7 +2,7 @@
 // merchant's; nothing here mentions the library.
 import type { Order } from "@agentpickup/core";
 import type { MerchantProfile } from "./config.js";
-import { esc, formatMoney, formatTime } from "./format.js";
+import { esc, formatMoney, formatTime, initialsOf, inkOn } from "./format.js";
 
 interface PageOpts {
   merchant: MerchantProfile;
@@ -12,37 +12,49 @@ interface PageOpts {
   inlineScript?: string;
   /** Where the shop lives ("" at a domain root, "/v/cafe" under a path): relative links resolve against it. */
   root?: string;
+  /** A small label at the right of the header, such as "Staff". */
+  badge?: string;
 }
 
-export function page({ merchant, title, body, scripts = [], inlineScript, root }: PageOpts): string {
+export function page({ merchant, title, body, scripts = [], inlineScript, root, badge }: PageOpts): string {
   const color = merchant.brandColor ?? "#111827";
+  const on = inkOn(color);
+  // The brand colour as text on white only when it's dark enough to read there.
+  const brandText = on === "#ffffff" ? color : "#14161a";
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">${root !== undefined ? `\n<base href="${esc(root)}/">` : ""}
 <title>${esc(title)} · ${esc(merchant.name)}</title>
 <style>
-:root{--brand:${esc(color)};--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--bg:#f3f4f6;--card:#fff;--ok:#047857;--okbg:#ecfdf5;--bad:#b91c1c;--badbg:#fef2f2}
+:root{--brand:${esc(color)};--on:${on};--brand-text:${esc(brandText)};--ink:#14161a;--muted:#5f6670;--line:#e4e6ea;--bg:#f3f4f6;--card:#fff;--ok:#047857;--okbg:#ecfdf5;--bad:#b91c1c;--badbg:#fef2f2}
+@supports (background:color-mix(in srgb,red 50%,white)){:root{--bg:color-mix(in srgb,var(--brand) 7%,#f4f5f6)}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-header{background:var(--brand);color:#fff;padding:14px 20px;font-weight:700;font-size:18px;display:flex;align-items:center;gap:10px}
-header img{height:28px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+header{background:var(--brand);color:var(--on)}
+.bar{max-width:520px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px;font-weight:700;font-size:18px;letter-spacing:-.01em}
+.bar .mark{flex:0 0 auto;height:36px;display:grid;place-items:center}
+.bar .mark img{height:36px;max-width:150px;object-fit:contain;background:#fff;border-radius:9px;padding:4px}
+.bar .mono{width:36px;border-radius:9px;background:var(--on);color:var(--brand);font-size:14px;font-weight:800;letter-spacing:0}
+.bar .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .badge{flex:0 0 auto;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;border:1px solid currentColor;border-radius:999px;padding:3px 10px;opacity:.85}
 main{max-width:520px;margin:0 auto;padding:20px 16px 48px}
-.card{background:var(--card);border-radius:16px;padding:22px;box-shadow:0 1px 2px rgba(0,0,0,.05);margin-bottom:16px}
-h1{font-size:22px;margin:0 0 6px}
-p{margin:0 0 10px;color:#374151}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:14px}
+h1{font-size:22px;line-height:1.25;letter-spacing:-.015em;margin:0 0 6px}
+p{margin:0 0 10px;color:#3a3f46}
 .muted{color:var(--muted);font-size:14px}
-.qr{display:block;margin:14px auto 6px;width:min(280px,80vw);height:auto;image-rendering:pixelated}
-.code{font:700 28px/1.2 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.2em;text-align:center}
+.qr{display:block;margin:16px auto 8px;width:min(280px,78vw);height:auto;image-rendering:pixelated;padding:10px;background:#fff;border:1px solid var(--line);border-radius:14px}
+.code{font:700 30px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.22em;text-align:center;color:var(--brand-text)}
 .label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:center}
 table{width:100%;border-collapse:collapse;font-size:15px}
-td{padding:7px 0;border-bottom:1px solid var(--line)} td:last-child{text-align:right}
+td{padding:8px 0;border-bottom:1px solid var(--line)} td:last-child{text-align:right;font-variant-numeric:tabular-nums}
 tr.total td{font-weight:700;border-bottom:0}
-.btn{display:inline-block;border:0;border-radius:12px;background:var(--brand);color:#fff;font-family:inherit;font-weight:600;font-size:16px;line-height:1;padding:14px 20px;cursor:pointer;text-decoration:none;text-align:center}
+.btn{display:inline-block;border:0;border-radius:12px;background:var(--brand);color:var(--on);font-family:inherit;font-weight:600;font-size:16px;line-height:1;padding:14px 20px;cursor:pointer;text-decoration:none;text-align:center}
 .btn.block{display:block;width:100%}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn:focus-visible,input:focus-visible{outline:3px solid var(--brand);outline-offset:2px}
 .btn:disabled{opacity:.5;cursor:default}
-.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;background:#eef2ff;color:#3730a3}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;background:#eef0f3;color:#3a3f46}
 .pill.ok{background:var(--okbg);color:var(--ok)} .pill.bad{background:var(--badbg);color:var(--bad)}
 .banner{border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:14px}
 .banner.warn{background:#fffbeb;color:#92400e}
@@ -53,9 +65,17 @@ input[type=text],input[type=password]{width:100%;font:inherit;padding:12px 14px;
 .row{display:flex;gap:10px;align-items:center}
 .row>*{flex:1}
 video{width:100%;border-radius:14px;background:#000;aspect-ratio:1/1;object-fit:cover}
+.ticket{padding:0;overflow:hidden;text-align:center}
+.ticket .top{padding:22px 22px 18px}
+.ticket .tear{height:18px;background:radial-gradient(circle at 0 50%,var(--bg) 9px,transparent 9.5px),radial-gradient(circle at 100% 50%,var(--bg) 9px,transparent 9.5px);position:relative}
+.ticket .tear::after{content:"";position:absolute;left:18px;right:18px;top:50%;border-top:2px dashed var(--line)}
+.ticket .foot{padding:14px 22px 20px}
+.place b{display:block}
 .hidden{display:none!important}
 </style></head><body>
-<header>${merchant.logoUrl ? `<img src="${esc(merchant.logoUrl)}" alt="">` : ""}${esc(merchant.name)}</header>
+<header><div class="bar"><span class="mark${merchant.logoUrl ? "" : " mono"}">${
+    merchant.logoUrl ? `<img src="${esc(merchant.logoUrl)}" alt="">` : esc(initialsOf(merchant.name))
+  }</span><span class="name">${esc(merchant.name)}</span>${badge ? `<span class="badge">${esc(badge)}</span>` : ""}</div></header>
 <main>${body}</main>
 ${inlineScript ? `<script>${inlineScript.replaceAll("<", "\\u003c")}</script>` : ""}
 ${scripts.map((s) => `<script src="${esc(s)}"></script>`).join("")}
@@ -96,7 +116,8 @@ export function passPage(o: {
   const live = (order.status === "paid" || order.status === "ready") && !o.group;
   const preparing = o.readySoon && order.status === "paid";
   const body = `
-<div class="card" style="text-align:center">
+<div class="card ticket">
+  <div class="top">
   ${statusPill(order)}
   ${
     live
@@ -111,13 +132,14 @@ export function passPage(o: {
         ? `<h1 style="margin-top:10px">Collected. Enjoy!</h1><p class="muted">Picked up ${esc(formatTime(order.collectedAt ?? Date.now(), o.timeZone))}</p>`
         : `<h1 style="margin-top:10px">This pass can't be used</h1><p class="muted">Contact ${esc(merchant.supportEmail ?? merchant.name)} if that's unexpected.</p>`
   }
+  </div>
+  ${live ? `<div class="tear" aria-hidden="true"></div><div class="foot"><div class="label">Collect by</div><b>${esc(formatTime(order.collectBy, o.timeZone))}</b></div>` : ""}
 </div>
 <div class="card">${itemsTable(order)}</div>
-<div class="card">
+<div class="card place">
   <b>${esc(merchant.location.name)}</b>
   ${merchant.location.address ? `<p class="muted" style="margin:2px 0 0">${esc(merchant.location.address)}</p>` : ""}
   ${merchant.location.hours ? `<p class="muted" style="margin:2px 0 0">${esc(merchant.location.hours)}</p>` : ""}
-  ${live ? `<p class="muted" style="margin-top:8px">Collect by ${esc(formatTime(order.collectBy, o.timeZone))}</p>` : ""}
 </div>
 <p class="muted" style="text-align:center">Anyone with this code can collect the order.</p>`;
   return page({ merchant, title: "Your pickup pass", body });
@@ -153,7 +175,7 @@ export function staffLoginPage(merchant: MerchantProfile, failed = false, root =
     <button class="btn block" style="margin-top:12px">Open scanner</button>
   </form>
 </div>`;
-  return page({ merchant, title: "Staff sign-in", body, root });
+  return page({ merchant, title: "Staff sign-in", body, root, badge: "Staff" });
 }
 
 export function scannerPage(o: { merchant: MerchantProfile; open: boolean; prefill?: string; root?: string }): string {
@@ -178,6 +200,7 @@ ${o.open ? `<div class="banner warn">Demo mode: this scanner is open to anyone. 
   return page({
     merchant: o.merchant,
     title: "Scanner",
+    badge: "Staff",
     body,
     scripts: ["collect-assets/jsQR.js", "collect-assets/scanner.js"],
     root: o.root ?? "",

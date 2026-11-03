@@ -186,7 +186,9 @@ export function createGroups(deps: GroupDeps) {
       for (const o of paid) await store.updateOrder(o.id, { collectBy: combined.collectBy });
       const sent: GroupOrder = { ...g, status: "sent", closedAt: now, combinedOrderId: combined.id };
       await save(sent);
-      await deps.emit("order.paid", combined, { group: g.id, people: paid.length });
+      // Connectors need to know when none of it was real money (Square records such an order at $0).
+      const testOnly = paid.every((o) => o.rail === "test");
+      await deps.emit("order.paid", combined, { group: g.id, people: paid.length, ...(testOnly ? { testOnly } : {}) });
       await deps.emailCombined(combined);
       return sent;
     });

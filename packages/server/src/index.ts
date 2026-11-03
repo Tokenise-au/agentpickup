@@ -691,7 +691,7 @@ export function createCollect(config: CollectConfig) {
   /** The shop's own settings win; a connector's profile (Square's location) fills what they leave out. */
   function useProfile(p: ShopProfile) {
     const own = config.merchant;
-    for (const k of ["logoUrl", "supportEmail", "shopUrl", "phone"] as const) {
+    for (const k of ["logoUrl", "brandColor", "supportEmail", "shopUrl", "phone"] as const) {
       if (!own[k] && p[k]) merchant[k] = p[k];
     }
     if (p.location) {
