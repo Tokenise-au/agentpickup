@@ -1,6 +1,8 @@
 // Square POS connector. The venue's Square menu becomes the agentPickup menu; each paid order appears in
 // Square as a pickup order with the payment recorded as taken outside Square; marking it ready in Square
-// tells agentPickup (which emails the customer); scanning the QR completes it in Square.
+// tells agentPickup (which emails the customer); scanning the QR completes it in Square. Square won't
+// cancel an order once a payment is recorded, so a no-show cancels the pickup, records a refund when the
+// money actually went back, and closes the order.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Order } from "@agentpickup/core";
 import type { CatalogItem } from "../config.js";
@@ -34,6 +36,10 @@ type SquareOrder = { id: string; version: number; state: string; total_money?: M
 
 /** The order a pickup moves through in Square; later states are reached one step at a time. */
 const PICKUP_STEPS = ["PROPOSED", "RESERVED", "PREPARED", "COMPLETED"];
+
+/** No-show outcomes where agentPickup gave the money back at expiry. A USDC refund that settles later
+ * arrives as its own order.refunded event. */
+const RETURNED_AT_EXPIRY = new Set(["hold_released", "refunded"]);
 
 const EXTERNAL_TYPE: Record<string, string> = { x402: "CRYPTO", card: "CARD", mpp: "CARD", ucp: "CARD", acp: "CARD", test: "OTHER" };
 
@@ -162,23 +168,45 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     });
   }
 
-  /** Move the order's pickup to `target` in Square, through any states it hasn't reached yet. */
+  /**
+   * Move the order's pickup to `target` in Square, through any states it hasn't reached yet. After a
+   * completed or cancelled pickup, close the order itself so it leaves the venue's open orders.
+   */
   async function advance(order: Order, target: "PREPARED" | "COMPLETED" | "CANCELED", ctx: ConnectorContext) {
     const link = await ctx.linked(order.id);
     if (!link) return;
-    const { order: sq } = await call<{ order: SquareOrder }>("GET", `/v2/orders/${encodeURIComponent(link.externalId)}`);
+    let { order: sq } = await call<{ order: SquareOrder }>("GET", `/v2/orders/${encodeURIComponent(link.externalId)}`);
     const f = sq.fulfillments?.find((x) => x.uid === link.fulfillmentUid) ?? sq.fulfillments?.[0];
-    if (!f || f.state === target || f.state === "COMPLETED" || f.state === "CANCELED" || f.state === "FAILED") return;
-    const from = PICKUP_STEPS.indexOf(f.state);
-    const steps = target === "CANCELED" ? ["CANCELED"] : PICKUP_STEPS.slice(from + 1, PICKUP_STEPS.indexOf(target) + 1);
-    let current = sq.version;
-    for (const state of steps) {
-      const res = await call<{ order: SquareOrder }>("PUT", `/v2/orders/${encodeURIComponent(sq.id)}`, {
-        idempotency_key: `agentpickup-${order.id}-${state}`,
-        order: { location_id: cfg.locationId, version: current, fulfillments: [{ uid: f.uid, state }] },
-      });
-      current = res.order.version;
+    if (!f) return;
+    const done = f.state === "COMPLETED" || f.state === "CANCELED" || f.state === "FAILED";
+    if (!done && f.state !== target) {
+      const from = PICKUP_STEPS.indexOf(f.state);
+      const steps = target === "CANCELED" ? ["CANCELED"] : PICKUP_STEPS.slice(from + 1, PICKUP_STEPS.indexOf(target) + 1);
+      for (const state of steps) {
+        ({ order: sq } = await call<{ order: SquareOrder }>("PUT", `/v2/orders/${encodeURIComponent(sq.id)}`, {
+          idempotency_key: `agentpickup-${order.id}-${state}`,
+          order: { location_id: cfg.locationId, version: sq.version, fulfillments: [{ uid: f.uid, state }] },
+        }));
+      }
     }
+    if (target !== "PREPARED" && sq.state === "OPEN") {
+      await call("PUT", `/v2/orders/${encodeURIComponent(sq.id)}`, {
+        idempotency_key: `agentpickup-${order.id}-close`,
+        order: { location_id: cfg.locationId, version: sq.version, state: "COMPLETED" },
+      });
+    }
+  }
+
+  /** Record in Square that the money for this order went back to the customer. */
+  async function recordRefund(order: Order, ctx: ConnectorContext) {
+    const link = await ctx.linked(order.id);
+    if (!link?.paymentId) return;
+    await call("POST", "/v2/refunds", {
+      idempotency_key: `agentpickup-refund-${order.id}`,
+      payment_id: link.paymentId,
+      amount_money: { amount: Number(link.squareTotal ?? order.totalCents), currency: ctx.currency.toUpperCase() },
+      reason: "agentPickup: not collected, money returned",
+    });
   }
 
   return {
@@ -189,7 +217,10 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
       if (event.type === "order.paid") await sendOrder(order, ctx);
       else if (event.type === "order.ready") await advance(order, "PREPARED", ctx);
       else if (event.type === "order.collected") await advance(order, "COMPLETED", ctx);
-      else if (event.type === "order.expired" || event.type === "order.cancelled") await advance(order, "CANCELED", ctx);
+      else if (event.type === "order.expired") {
+        if (RETURNED_AT_EXPIRY.has(String(event.data?.outcome))) await recordRefund(order, ctx);
+        await advance(order, "CANCELED", ctx);
+      } else if (event.type === "order.refunded") await recordRefund(order, ctx);
     },
 
     routes(app, ctx) {

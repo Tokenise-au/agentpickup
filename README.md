@@ -15,7 +15,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # 165 tests: every path on SQLite, and again on Postgres (in-process PGlite)
+npm test           # 185 tests: every path on SQLite, and again on Postgres (in-process PGlite)
 npm run typecheck
 ```
 
@@ -119,6 +119,56 @@ gas. A failed refund is tried again on each sweep, and `collect.refundX402(order
 EIP-3009 nonce is derived from the order id, so the USDC contract itself refuses a second refund of the same
 order. The key sits in your server config: keep only what refunds need in that wallet.
 
+### Connectors: orders on the screens staff already use
+
+A connector plugs agentPickup into the system a venue already runs, so orders from people and agents
+arrive where staff work, the venue's own menu is the menu, and status flows both ways.
+
+**Square POS** (tested against a real Square sandbox, 2026-11-03):
+
+```ts
+import { createCollect, squareConnector } from "@agentpickup/server";
+
+const pickup = createCollect({
+  // ...
+  currency: "aud", // the Square location's currency
+  connectors: [
+    squareConnector({
+      accessToken: process.env.SQUARE_ACCESS_TOKEN!,
+      locationId: process.env.SQUARE_LOCATION_ID!,
+      environment: "production", // "sandbox" while testing
+      webhookSignatureKey: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY, // optional, for "ready" from Square
+    }),
+  ],
+});
+```
+
+- The Square menu becomes the shop's menu (items at that location, in its currency, at a fixed price).
+- A paid order appears in Square as a pickup order for the customer's name, with the payment recorded as
+  taken outside Square (`CRYPTO` for USDC, `CARD` for cards), so it shows as fully paid.
+- Staff marking it ready in Square emails the customer: subscribe to `order.fulfillment.updated` in the
+  Square Developer Console at `<baseUrl>/connect/square/webhook` and set `webhookSignatureKey`.
+- Scanning the QR completes the pickup and closes the order in Square. A no-show cancels the pickup,
+  records a refund in Square when agentPickup gave the money back, and closes the order (Square won't
+  cancel an order once a payment is recorded).
+- Check your setup against a sandbox: `node --conditions=source --import tsx scripts/square-sandbox-check.ts`.
+
+**Any other platform** uses the connector API, so it plugs in without a bespoke build. Set
+`connect: { apiKeys: [...] }` (one key per platform) and call it with `Authorization: Bearer <key>`:
+
+| Route | What |
+|---|---|
+| `PUT /connect/v1/catalog` | Replace the menu with the platform's: `{ items: [{ id, name, priceCents, description? }] }`. Kept across restarts |
+| `DELETE /connect/v1/catalog` | Go back to the menu in the shop's config |
+| `POST /connect/v1/catalog/sync` | Pull the menu again from the configured connectors |
+| `GET /connect/v1/orders?status=paid,ready` | Open orders with items, the customer's name and the pickup code (never their email) |
+| `POST /connect/v1/orders/:id/ready` | Mark an order ready; the customer gets the "ready" email |
+
+New orders reach the platform as signed webhooks (`webhook: { url, secret }`, see How it works). To build a
+connector of your own, implement `PickupConnector`: `fetchCatalog` (the menu), `onEvent` (paid, ready,
+collected, expired, refunded) and `routes` (callbacks under `/connect/<name>/`). Each connector hears events
+in order per order, off the payment path, with retries, so a slow POS never delays a customer's payment.
+
 Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
 them to your public origin before `pickup.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
 so the URLs it reports, such as the resource in an x402 quote, match what clients called.
@@ -188,8 +238,11 @@ See [TODO.md](TODO.md) for what's built and what's next.
   with the failure recorded.
 - x402 is tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its
   refund authorization passes PayAI's verification.
-- Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
-  offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, and the AP2
+- Square: everything above has run against a real Square sandbox except the "ready" webhook, which needs a
+  subscription pointing at a public URL; it's tested with Square's own signing method.
+- Not built yet: multi-venue (one install serving many venues), Doshii and Deliverect connectors (they need
+  partner access), Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes, offline
+  scanning, a Shopify connector, UCP request signatures and cart/catalog endpoints, and the AP2
   payment mandate (the PSP's job).
 - On npm: [`@agentpickup/core`](https://www.npmjs.com/package/@agentpickup/core),
   [`@agentpickup/server`](https://www.npmjs.com/package/@agentpickup/server) and

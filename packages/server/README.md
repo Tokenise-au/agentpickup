@@ -28,6 +28,10 @@ const pickup = createCollect({
 // pickup.app is a Hono app: mount it, or call pickup.app.fetch from any runtime with Request/Response.
 ```
 
+Connectors put orders on the screens staff already use: `squareConnector` for Square POS (menu in, paid
+pickup orders out, ready and collected both ways), and a connector API at `/connect/v1` any other platform
+can integrate against.
+
 Storage is `SqliteStore` (one file) or `PostgresStore` (any pg-style client: `pg`, Neon, Supabase), or
 your own `Store`. Shops priced in other currencies take x402 through `payments.x402.toUsdCents`, and
 `payments.x402.refunds` pays USDC no-shows back through the facilitator.

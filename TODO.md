@@ -35,6 +35,15 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] MCP server `@agentpickup/mcp`: five tools, wallet with spend cap and testnet default, stdio CLI, Streamable HTTP handler, hosted at `/mcp` on the demo
 - [x] MCP Registry listing `io.github.dav3trad3r/agentpickup` 0.1.0 (npm package + hosted `/mcp`). Re-publish with `npx tsx scripts/publish-mcp-registry.ts --go` after bumping `packages/mcp/server.json`
 
+## Connectors (2026-11-03)
+
+- [x] Connector contract (`PickupConnector`: menu in, order events out, callback routes) and a live menu kept in the store
+- [x] Connector API at `/connect/v1` for any platform (menu push and revert, open orders, mark ready), Bearer keys
+- [x] Square POS connector: menu sync, paid pickup orders with the payment recorded as external, ready/collected/no-show both ways, refunds recorded, orders closed. Run against a real Square sandbox; `scripts/square-sandbox-check.ts`
+- [ ] Square "ready" webhook against real Square (needs a subscription to a public URL; tested with Square's signing method)
+- [ ] Multi-venue: one install, many venues (menus, branding, payouts, staff keys per venue)
+- [ ] Doshii and Deliverect connectors (need partner API access)
+
 ## Roadmap to production
 
 - [ ] Phase 0: domain (Dave), privacy page (public repo, npm 0.1.0 and testnet wallets done)

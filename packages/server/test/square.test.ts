@@ -4,6 +4,7 @@ import { createHmac } from "node:crypto";
 import { generateSigningKeyPem } from "@agentpickup/core";
 import { createCollect, outboxMailer, squareConnector, type Store } from "../src/index.js";
 import { agentBuys, makeAgent, setupShop, testStore } from "./helpers.js";
+import { generatePrivateKey } from "viem/accounts";
 
 const TOKEN = "EAAAtest-token";
 const LOCATION = "L_TEST_LOCATION";
@@ -29,6 +30,7 @@ const STEPS = ["PROPOSED", "RESERVED", "PREPARED", "COMPLETED"];
 class FakeSquare {
   orders = new Map<string, SqOrder>();
   payments: Record<string, unknown>[] = [];
+  refunds: Record<string, unknown>[] = [];
   calls: string[] = [];
   failNext = 0;
   private idem = new Map<string, unknown>();
@@ -125,6 +127,11 @@ class FakeSquare {
       const order = this.orders.get(m[1]);
       if (!order) return error(404, "NOT_FOUND", "order");
       if (body.order.version !== order.version) return error(400, "VERSION_MISMATCH", "stale version");
+      // As the real sandbox answers: a paid order can be closed but not cancelled.
+      if (body.order.state === "CANCELED" && this.payments.some((p) => p.order_id === order.id)) {
+        return error(400, "BAD_REQUEST", "Orders cannot be canceled after payments have been processed.");
+      }
+      if (body.order.state) order.state = body.order.state;
       for (const change of body.order.fulfillments ?? []) {
         const f = order.fulfillments.find((x) => x.uid === change.uid);
         if (!f) return error(400, "NOT_FOUND", "fulfillment");
@@ -133,7 +140,6 @@ class FakeSquare {
         f.state = change.state;
       }
       order.version++;
-      if (order.fulfillments.every((f) => f.state === "COMPLETED")) order.state = "COMPLETED";
       return remember({ order });
     }
     if (method === "POST" && url.pathname === "/v2/payments") {
@@ -143,6 +149,14 @@ class FakeSquare {
       const payment = { id: `PAY_${this.payments.length + 1}`, ...body, status: "COMPLETED" };
       this.payments.push(payment);
       return remember({ payment });
+    }
+    if (method === "POST" && url.pathname === "/v2/refunds") {
+      const payment = this.payments.find((p) => p.id === body.payment_id) as { amount_money: { amount: number } } | undefined;
+      if (!payment) return error(404, "NOT_FOUND", "payment");
+      if (body.amount_money?.amount > payment.amount_money.amount) return error(400, "INVALID_VALUE", "more than was paid");
+      const refund = { id: `REF_${this.refunds.length + 1}`, ...body, status: "PENDING" };
+      this.refunds.push(refund);
+      return remember({ refund });
     }
     return error(404, "NOT_FOUND", `${method} ${url.pathname}`);
   };
@@ -281,7 +295,29 @@ test("square: marking ready in agentPickup moves Square to prepared, and a no-sh
   await shop.collect.flushConnectors();
   const byRef = (id: string) => [...square.orders.values()].find((o) => o.reference_id === id)!;
   assert.equal(byRef(readyId).fulfillments[0].state, "PREPARED");
+  assert.equal(byRef(readyId).state, "OPEN");
   assert.equal(byRef(goneId).fulfillments[0].state, "CANCELED");
+  assert.equal(byRef(goneId).state, "COMPLETED", "closed, since Square won't cancel a paid order");
+  assert.equal(square.refunds.length, 0, "a test payment took no money, so there's nothing to refund");
+});
+
+test("square: a USDC no-show paid back by agentPickup shows as refunded in Square", async () => {
+  const square = new FakeSquare();
+  const shop = setupShop(
+    { currency: "aud", connectors: [squareConnector({ accessToken: TOKEN, locationId: LOCATION, fetch: square.fetch })] },
+    { toUsdCents: (c) => c * 0.65, refunds: { privateKey: generatePrivateKey() } },
+  );
+  await shop.collect.ready;
+  const { orderId } = await agentBuys(shop, makeAgent(), [{ id: "VAR_FW_REG", qty: 1 }]);
+  await shop.collect.flushConnectors();
+  await shop.store.updateOrder(orderId, { collectBy: Date.now() - 1 });
+  await shop.collect.sweep();
+  await shop.collect.flushConnectors();
+  const [sq] = [...square.orders.values()];
+  assert.equal(sq.fulfillments[0].state, "CANCELED");
+  assert.equal(sq.state, "COMPLETED");
+  assert.equal(square.refunds.length, 1, "recorded once, when the USDC refund settled");
+  assert.deepEqual((square.refunds[0] as { amount_money: unknown }).amount_money, { amount: 520, currency: "AUD" });
 });
 
 test("square: when Square is down, the customer is unaffected and the order still reaches Square once", async () => {
