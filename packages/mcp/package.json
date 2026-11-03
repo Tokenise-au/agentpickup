@@ -1,7 +1,7 @@
 {
   "name": "@agentpickup/mcp",
   "version": "0.2.0",
-  "description": "MCP server for agentPickup: let an AI agent order from a shop, pay over x402, and hand its user the QR to collect in person.",
+  "description": "MCP server for agentPickup: let an AI agent find pickup shops near its user, order, pay over x402, and hand its user the QR to collect in person.",
   "mcpName": "io.github.dav3trad3r/agentpickup",
   "type": "module",
   "main": "./dist/index.js",
