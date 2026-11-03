@@ -1,12 +1,12 @@
 # agentPickup
 
-Click and collect for people and their AI agents.
+The pickup layer for agent payments: click and collect for people and their AI agents.
 
-1. Someone buys online: a person at checkout, or an AI agent calling the shop's API.
-2. They pay by card (Stripe) or in USDC (x402).
+1. Someone buys online: a person at checkout, or an AI agent through x402, MPP, UCP or ACP.
+2. They pay by card (Stripe), USDC (x402), or a Stripe Shared Payment Token handed over by an agent platform.
 3. An email arrives from the shop with a signed QR and a short pickup code.
 4. Staff scan it with any phone camera, the built-in scanner, or a USB scanner.
-5. The order is handed over. A card hold is captured at that moment; no-shows are released.
+5. The order is handed over. A card hold is captured at that moment; no-shows are released or refunded.
 
 Shoppers and staff only ever see the shop's name, colours and email address.
 
@@ -15,7 +15,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # pass format + end-to-end order flow
+npm test           # 70 tests: passes, order flow, every protocol, hardening
 npm run typecheck
 ```
 
@@ -24,46 +24,66 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 
 | Setting | What it turns on |
 |---|---|
-| `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) | Card checkout. Holds the card, captures on scan. Use `sk_test_` keys. |
-| `X402_PAY_TO`, `X402_NETWORK` | Agent payments. `eip155:84532` is Base Sepolia (test USDC). |
+| `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) | Card checkout. Holds the card, captures on scan. Use `sk_test_` keys. Also the SPT handler for UCP. |
+| `STRIPE_PROFILE_ID` | The Stripe profile id advertised to UCP platforms. |
+| `X402_PAY_TO`, `X402_NETWORK` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC). |
+| `MPP_NETWORK_ID`, `MPP_CHALLENGE_SECRET` | MPP agent payments by card or Link into your Stripe (needs Stripe's MPP access). |
 | `RESEND_API_KEY`, `MAIL_FROM` | Real email delivery, QR embedded as an inline image. |
-| `STAFF_KEY` | Locks the scanner. Without it `/staff` is open (demo only). |
+| `STAFF_KEY` | Locks the scanner. Without it the demo runs with `allowOpenStaff`. |
 | `ADMIN_KEY` | Read waitlist signups at `/admin/waitlist?key=…`. |
+| `SIGNING_KEY_PEM`, `AP2_SIGNING_KEY_PEM` | Pass signing (Ed25519) and AP2 merchant signatures (ES256). Generated into `data/` if unset. |
+
+## Agent payment standards
+
+| Standard | What agentPickup does | Where |
+|---|---|---|
+| **x402** | `exact` payments priced from the order. **Bazaar** discovery metadata, **signed offers and receipts** (JWS, did:web key at `/.well-known/did.json`), **payment-identifier** idempotency, and **Sign-In-With-X** so the paying wallet can fetch its pass again | `POST /api/orders/:id/pay`, `GET /api/orders/:id/pass`, `/openapi.json` |
+| **MPP** (Stripe + Tempo) | `WWW-Authenticate: Payment` challenge; card or Link through a Stripe Shared Payment Token, confirmed in the merchant's Stripe, with `Payment-Receipt`. Credentials are bound to one order | `POST /api/orders/:id/mpp` |
+| **UCP** (2026-08-25) | Business profile; REST checkout with the `pickup` method and a `business_location`; `com.stripe.payments` SPT handler; the order `permalink_url` is the pickup pass, with ready and delivered fulfilment events | `/.well-known/ucp`, `/ucp/v1/*` |
+| **AP2** (v0.2, via UCP) | ES256 `merchant_authorization` on every checkout, and a required SD-JWT+KB checkout mandate when the platform supports AP2. The mandate is verified and stored as evidence | UCP complete |
+| **ACP** (2026-04-17) | Discovery; checkout sessions with the `pickup` fulfilment option; delegated payment (SPT); signed order webhooks | `/.well-known/acp.json`, `/acp/*` |
+| **Visa TAP / Mastercard Agent Pay / Web Bot Auth** | RFC 9421 request signatures on agent payment routes, in `log` or `require` mode | middleware |
+
+Stock x402 clients cap each payment at **$1** (`spendControls.maxAmountPerPayment`). Agents buying
+real goods need that raised.
 
 ## Use it in your own server
 
 ```ts
 import { createCollect, SqliteStore, resendMailer } from "@agentpickup/server";
 
-const collect = createCollect({
+const pickup = createCollect({
   baseUrl: "https://orders.yourshop.com",
   merchant: { name: "Corner Café", brandColor: "#9a3412", fromEmail: "Corner Café <orders@yourshop.com>", location: { name: "Front counter" } },
   catalog: [{ id: "flat-white", name: "Flat white", priceCents: 450 }],
   payments: {
     card: { secretKey: process.env.STRIPE_KEY!, captureMode: "hold" },
     x402: { payTo: process.env.WALLET!, network: "eip155:8453" },
+    mpp: { stripeSecretKey: process.env.STRIPE_KEY!, networkId: process.env.MPP_NETWORK_ID!, challengeSecret: process.env.MPP_SECRET! },
   },
-  store: new SqliteStore("./data/collect.db"),
+  ucp: { stripe: { secretKey: process.env.STRIPE_KEY!, businessProfile: "profile_…" }, ap2: { signingKeyPem: process.env.AP2_KEY! } },
+  acp: { apiKeys: [process.env.ACP_PLATFORM_KEY!], stripe: { secretKey: process.env.STRIPE_KEY! } },
+  agentSignatures: { mode: "log", keyServices: [{ url: "https://<visa key service>", kind: "visa-keys" }] },
+  store: new SqliteStore("./data/pickup.db"),
   mailer: resendMailer({ apiKey: process.env.RESEND_KEY! }),
   signingKeyPem: process.env.PASS_SIGNING_KEY!,   // generateSigningKeyPem() from @agentpickup/core
   staffKey: process.env.STAFF_KEY,
   onEvent: (event, order) => { /* push to your POS: order.paid, order.ready, order.collected, order.expired */ },
 });
 
-app.route("/", collect.app); // any Hono app; collect.app.fetch works anywhere
+app.route("/", pickup.app); // any Hono app; pickup.app.fetch works anywhere
 ```
 
 Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
-them to your public origin before `collect.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
+them to your public origin before `pickup.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
 so the URLs it reports, such as the resource in an x402 quote, match what clients called.
 
-### Routes it adds
+### Core routes
 
 | Route | Who | What |
 |---|---|---|
 | `GET /api/catalog` | anyone | Menu, merchant and which payment methods are on |
-| `POST /api/orders` | shopper or agent | `{ items: [{id, qty}], email, name?, rail: "card" \| "x402" \| "test" }` |
-| `POST /api/orders/:id/pay` | agent | x402-protected. Answers 402 with the price; once paid the QR is emailed |
+| `POST /api/orders` | shopper or agent | `{ items: [{id, qty}], email, name?, rail }`. `Idempotency-Key` supported |
 | `GET /api/orders/:id` | anyone with the id | Status only. No pass, code or email |
 | `GET /orders/:id/thanks` | shopper | Stripe return page; confirms payment and sends the email |
 | `POST /api/stripe/webhook` | Stripe | `checkout.session.completed` |
@@ -82,9 +102,12 @@ so the URLs it reports, such as the resource in an x402 quote, match what client
 - **Card payments** use Stripe Checkout with `capture_method: manual`. The hold is captured on scan,
   and released if nobody collects in time (`noShowPolicy: "keep"` captures it instead). Card holds
   lapse after about 7 days, so use `captureMode: "charge"` for longer pickup windows.
-- **Agent payments** use x402 `exact`, charged at order time. Uncollected agent orders are flagged
-  `refundDue`. x402's `auth-capture` scheme (hold, then capture on scan) is the planned upgrade, but
-  the public facilitator doesn't support it on Base Sepolia yet (checked 2026-11-03).
+- **Agent payments** (x402, MPP, UCP, ACP) are charged at order time. Uncollected MPP, UCP and ACP card
+  orders are refunded through Stripe; x402 orders are flagged `refundDue`. x402's `auth-capture` scheme
+  (hold, then capture on scan) is the planned upgrade, but the public facilitator doesn't support it on
+  Base Sepolia yet (checked 2026-11-03).
+- **Hardening**: staff routes fail closed without a key, failed lookups are throttled per client,
+  bodies are capped at 64 KB, and pass and staff pages are no-store, no-referrer and unframeable.
 - **Webhooks**: set `webhook: { url, secret }` and every event is POSTed with a
   `Collect-Signature: t=<unix>,v1=<hmac-sha256(secret, "<t>.<body>")>` header.
 
@@ -92,16 +115,17 @@ so the URLs it reports, such as the resource in an x402 quote, match what client
 
 ```
 packages/core     @agentpickup/core    pass signing/verifying, ids, types (no dependencies)
-packages/server   @agentpickup/server  Hono app: orders, Stripe, x402, email, scanner, pages
+packages/server   @agentpickup/server  Hono app: orders, payments, protocols, email, scanner, pages
 apps/demo         the product site: landing page, live demo shop, waitlist
 ```
 
-The repo folder is still called `collect402`; the product and packages are agentPickup
-(`agentpickup.xyz` and `agentpickup.app` looked unregistered on 2026-11-03; `agentpickup.com` is taken).
+The repo folder is still called `collect402`; the product and packages are agentPickup.
+See [TODO.md](TODO.md) for what's built and what's next.
 
 ## Not done yet
 
-- The Stripe and Resend paths are written and typechecked, but haven't been run against real
-  test keys. The x402 path is verified up to the 402 challenge, not a settled payment.
+- Stripe, MPP, UCP/ACP SPT payments and Resend are tested against fakes, not real test keys. x402 is
+  tested end to end with a fake facilitator and verified live up to the 402 challenge.
 - Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
-  offline scanning, Shopify/Square adapters, and an npm build (packages currently export TypeScript source).
+  offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, the AP2
+  payment mandate (the PSP's job), and an npm build (packages currently export TypeScript source).

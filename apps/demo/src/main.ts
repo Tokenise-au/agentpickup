@@ -76,6 +76,13 @@ const collect = createCollect({
       : undefined,
     ap2: { signingKeyPem: ap2Key() },
   },
+  // ACP at /acp. The public demo publishes its platform key; a real shop issues one per platform.
+  acp: {
+    apiKeys: [env.ACP_API_KEY || "demo-acp-key"],
+    stripe: env.STRIPE_SECRET_KEY ? { secretKey: env.STRIPE_SECRET_KEY } : undefined,
+  },
+  // Agent signatures are checked and reported on agent payment routes, not required, in the demo.
+  agentSignatures: { mode: "log" },
   collectWindowMinutes: 120,
   staffKey: env.STAFF_KEY || undefined,
   // The public demo lets visitors play staff; a real shop sets STAFF_KEY instead.

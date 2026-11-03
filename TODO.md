@@ -23,7 +23,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Request body size limits on every JSON endpoint (64 KB)
 - [x] Idempotency keys on order creation (`Idempotency-Key`, the stored response is replayed)
 - [x] Security headers on shopper and staff pages (no-store, no-referrer, frame-ancestors none, CSP)
-- [ ] Regression run after every item: unit tests, typecheck, and the demo flow
+- [x] Regression run after every item: unit tests, typecheck, and the demo flow (70 tests; UCP, ACP, x402, the demo order and the staff page checked on the running server; desktop and phone layout)
 
 ## Roadmap to production
 

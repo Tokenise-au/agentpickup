@@ -235,6 +235,11 @@ legend { font: 12.5px var(--mono); color: var(--muted); padding: 0; margin-botto
 code { font: 12.5px var(--mono); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
 pre code { background: none; border: 0; padding: 0; border-radius: 0; font: inherit; color: inherit; }
 .gap-table .tr { grid-template-columns: 110px 130px minmax(0, 1fr) 100px; }
+.std-table .tr { grid-template-columns: 170px minmax(0, 1fr) 190px; }
+@media (max-width: 760px) {
+  .std-table .tr { grid-template-columns: 1fr; }
+  .std-table .tr .p, .std-table .tr .chip { grid-column: 1; }
+}
 .tr.hl { background: rgba(181, 242, 61, .05); box-shadow: inset 3px 0 0 var(--lime); }
 .mark { font: 600 12.5px var(--mono); justify-self: start; white-space: nowrap; }
 .mark.no { color: var(--red); }
