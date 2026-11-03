@@ -63,6 +63,7 @@ Square.
 | Nightly backups of the venue databases, with a restore tested once | Claude | 2 h |
 | Uptime check on the site, the directory and `/mcp`, plus alerts on failed emails, Square calls and refunds, to you | Claude | 2 h |
 | An admin view of every venue's recent orders and failures (the admin API has the data) | Claude | in the above |
+| Usage counters and the 8am Brisbane report email: agents, orders, sellers, site, money, problems (done 2026-11-04) | Claude | done |
 
 **Done when** a restore from last night's backup works and a forced failure reaches you within minutes.
 

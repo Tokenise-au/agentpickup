@@ -109,6 +109,7 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
   instance, because a venue added on one wouldn't start on the other.
 - [ ] Move the venue host and venue stores to Postgres (`PostgresStore` exists), make venue changes reach
       every instance, and run the timed jobs (no-show sweep, Square resync) on one instance only
+- [x] Usage counted in site.db (MCP sessions by app and tool calls, directory, menus, pages, sign-up steps, orders, real USDC, emails, errors) and a daily report emailed to REPORT_TO at 8am Brisbane; preview at /admin/report (2026-11-04)
 - [ ] Monitoring and alerts, database backups, staff accounts instead of one shared staff key per venue
 - [ ] Email quota: Cloudflare is at 200 a day for now, and the demo caps itself at 100
 - [ ] x402 facilitator: PayAI's keyless tier covers 1,000 settlements, then needs an account
