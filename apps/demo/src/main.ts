@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateSigningKeyPem, newId } from "@agentpickup/core";
 import { createMcpHandler, walletPayer } from "@agentpickup/mcp";
-import { createCollect, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
+import { createCollect, createVenueHost, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { createDemoAgent, DEMO_NETWORKS, TESTNET } from "./demo-agent.js";
 
@@ -38,6 +38,7 @@ function ap2Key(): string {
 }
 
 const store = new SqliteStore(join(dataDir, "collect.db"));
+const mailer = env.RESEND_API_KEY ? resendMailer({ apiKey: env.RESEND_API_KEY }) : outboxMailer();
 
 // The demo's wallets. On Base Sepolia the café's own address is the payTo, so it can hand test USDC back
 // to the agent. On Base mainnet, payments go to X402_PAY_TO (the owner's wallet): the café key, which sits
@@ -71,7 +72,7 @@ const collect = createCollect({
   currency: "usd",
   timeZone: env.TIME_ZONE ?? "Australia/Brisbane",
   store,
-  mailer: env.RESEND_API_KEY ? resendMailer({ apiKey: env.RESEND_API_KEY }) : outboxMailer(),
+  mailer,
   signingKeyPem: signingKey(),
   payments: {
     card: env.STRIPE_SECRET_KEY
@@ -159,6 +160,8 @@ app.use("/api/waitlist", limit(10));
 app.use("/api/demo/*", limit(30));
 app.use("/api/demo/agent-pay", limit(4));
 app.use("/mcp", limit(60));
+app.use("/v/*", limit(60));
+app.use("/host/*", limit(30));
 app.use(
   "/mcp",
   cors({
@@ -239,6 +242,23 @@ const mcp = createMcpHandler({
       : undefined,
 });
 app.all("/mcp", (c) => mcp(c.req.raw));
+
+// More venues on the same install, at /v/<slug>, managed through /host/v1. Off unless both keys are set.
+const venueHost =
+  env.VENUE_SECRET && env.VENUE_ADMIN_KEY
+    ? createVenueHost({
+        baseUrl,
+        store: new SqliteStore(join(dataDir, "venues.db")),
+        storeFor: (slug) => new SqliteStore(join(dataDir, "venues", `${slug}.db`)),
+        mailer,
+        secretKey: env.VENUE_SECRET,
+        adminKeys: [env.VENUE_ADMIN_KEY],
+        shared: { exposeEmailPreview: true, agentSignatures: { mode: "log" }, collectWindowMinutes: 120 },
+        // Demo venues let visitors play staff unless a venue sets its own staff key.
+        allowOpenStaff: true,
+      })
+    : null;
+if (venueHost) app.route("/", venueHost.app);
 
 app.route("/", collect.app);
 
