@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pay with your agent wallet · agentPickup</title>
+<meta name="description" content="Give your AI agent a wallet you fund and limit, and let it pay for pickup orders and any other x402 service.">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="agentPickup home"><i></i><span><span class="dim">agent</span>Pickup</span></a>
+    <nav class="links" aria-label="Pages"><a href="/wallet">/wallet</a><a href="/support">/support</a></nav>
+  </div>
+</header>
+
+<main class="doc">
+  <h1>Pay with your agent wallet</h1>
+  <p>Give your AI assistant a wallet that you fund and limit. It can then pay for pickup orders from agentPickup
+  shops, and for any other service that takes x402 payments, in USDC (a digital US dollar). The wallet is yours:
+  agentPickup never holds your money.</p>
+  <p>These steps use Coinbase's Agentic Wallet with Claude. Any wallet that pays x402 links works the same way.</p>
+
+  <h2>1. Install the wallet</h2>
+  <p>In a terminal, run this and choose the Claude app you use (Claude Desktop or Claude Code):</p>
+  <pre class="cmd"><code>npx @coinbase/payments-mcp</code></pre>
+  <p>Its window opens. Sign in with your email; that creates your wallet.</p>
+
+  <h2>2. Add money and set limits</h2>
+  <ul>
+    <li>In the wallet window, add USDC on Base: with a card through Coinbase where that's offered, or by sending
+      USDC on Base to your wallet address from an exchange.</li>
+    <li>Set a limit per payment and per session, such as $10 and $20. Your assistant can't change them or top the
+      wallet up; only you can.</li>
+  </ul>
+
+  <h2>3. Add agentPickup</h2>
+  <p><strong>Claude Code:</strong></p>
+  <pre class="cmd"><code>claude mcp add agentpickup -- npx -y @agentpickup/mcp</code></pre>
+  <p><strong>Claude Desktop:</strong> under Settings, Developer, Edit Config, add this inside <code>"mcpServers"</code>:</p>
+  <pre class="cmd"><code>"agentpickup": { "command": "npx", "args": ["-y", "@agentpickup/mcp"] }</code></pre>
+  <p>Leave out <code>AGENTPICKUP_WALLET_KEY</code>: without it, agentPickup hands each payment to your wallet.
+  Restart Claude afterwards.</p>
+
+  <h2>4. Order something</h2>
+  <p>Ask in a new chat, for example:</p>
+  <pre class="cmd"><code>Find a café on agentPickup near me and order a flat white for pickup. Pay with my Coinbase wallet and send the QR to me@example.com.</code></pre>
+  <p>Claude finds the shop, shows you the items and total, and asks before it pays. You get a receipt by email,
+  and the pickup QR when the order is ready (or straight away, depending on the shop). Show the QR at the counter.</p>
+  <p>To try it without a real café, order a $0.50 babyccino from the <a href="/#demo">Demo Café</a>. The payment is
+  real USDC, but nothing is made: email <a href="mailto:hello@agentpickup.app">hello@agentpickup.app</a> and we'll
+  send it back.</p>
+
+  <h2>Selling too?</h2>
+  <p>The same wallet can receive. When you <a href="/connect">connect your venue</a>, paste its address as the
+  wallet agents pay, and USDC from orders arrives there directly.</p>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span class="brand small-brand"><i></i><span><span class="dim">agent</span>Pickup <span class="muted">· © 2026 Tokenise Pty Ltd</span></span></span>
+    <nav class="footer-links" aria-label="Legal"><a href="/wallet">Agent wallet</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav>
+  </div>
+</footer>
+</body>
+</html>

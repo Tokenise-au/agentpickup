@@ -346,6 +346,7 @@ app.get("/favicon.svg", file("favicon.svg"));
 app.get("/privacy", file("privacy.html"));
 app.get("/terms", file("terms.html"));
 app.get("/support", file("support.html"));
+app.get("/wallet", file("wallet.html"));
 // RFC 9116: where to report a security problem.
 app.get("/.well-known/security.txt", (c) =>
   c.text(

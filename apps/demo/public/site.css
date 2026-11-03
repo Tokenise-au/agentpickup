@@ -283,3 +283,6 @@ pre code { background: none; border: 0; padding: 0; border-radius: 0; font: inhe
 .footer-links { display: flex; gap: 16px; flex-wrap: wrap; }
 .footer-links a { color: var(--muted); text-decoration: none; font: 13px var(--mono); }
 .footer-links a:hover { color: var(--text); }
+.doc pre.cmd { margin: 10px 0; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.doc pre.cmd code { font: 13.5px/1.55 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.doc code { font: 13.5px var(--mono); color: var(--text); }
