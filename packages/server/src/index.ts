@@ -30,6 +30,7 @@ import { sptClient } from "./rails/spt.js";
 import { mountUcp } from "./ucp.js";
 import { mountAcp } from "./acp.js";
 import { createAp2 } from "./ap2.js";
+import { createAgentSignatureVerifier } from "./agent-signatures.js";
 import type { OrderInput, ProtocolCore } from "./protocol.js";
 import { didDocument, openApiDocument } from "./discovery.js";
 import { bodyLimit } from "hono/body-limit";
@@ -39,6 +40,7 @@ export type { CollectConfig, MerchantProfile, CatalogItem, StripeRailConfig, X40
 export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
 export type { AcpConfig } from "./acp.js";
 export type { Ap2Config, PlatformProfile } from "./ap2.js";
+export type { AgentSignatureConfig } from "./agent-signatures.js";
 export type { SptStripeConfig } from "./rails/spt.js";
 export { SqliteStore, type Store, type StoredEmail } from "./store.js";
 export { resendMailer, outboxMailer, renderPassEmail, type Mailer, type OutgoingMail } from "./mail.js";
@@ -405,6 +407,11 @@ export function createCollect(config: CollectConfig) {
   }
   for (const path of ["/p/*", "/c/*", "/staff", "/staff/*", "/orders/*", "/api/staff/*", "/api/orders/:id/pass"]) {
     app.use(path, sensitiveHeaders);
+  }
+  // Agent signatures go first on agent payment routes, before any payment or checkout work.
+  if (config.agentSignatures) {
+    const agentSig = createAgentSignatureVerifier(config.agentSignatures);
+    for (const path of ["/api/orders/:id/pay", "/api/orders/:id/mpp", "/ucp/v1/*", "/acp/*"]) app.use(path, agentSig.middleware);
   }
   const require = createRequire(import.meta.url);
   const jsqr = readFileSync(require.resolve("jsqr/dist/jsQR.js"));

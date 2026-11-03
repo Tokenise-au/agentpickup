@@ -4,6 +4,7 @@ import type { MppRailConfig } from "./rails/mpp.js";
 import type { SptStripeConfig } from "./rails/spt.js";
 import type { AcpConfig } from "./acp.js";
 import type { Ap2Config } from "./ap2.js";
+import type { AgentSignatureConfig } from "./agent-signatures.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 
@@ -79,6 +80,11 @@ export interface CollectConfig {
   };
   /** ACP (Agentic Commerce Protocol): checkout sessions with the pickup option, at /acp. */
   acp?: AcpConfig & { stripe?: SptStripeConfig };
+  /**
+   * Agent request signatures (RFC 9421: Visa Trusted Agent Protocol, Mastercard Agent Pay,
+   * Web Bot Auth) on agent payment routes: x402 and MPP pay links, UCP and ACP.
+   */
+  agentSignatures?: AgentSignatureConfig;
   /** IANA zone for times in emails and pages, e.g. "Australia/Brisbane". */
   timeZone?: string;
   /** Optional footer link in emails. Off by default: shoppers see only the merchant. */
