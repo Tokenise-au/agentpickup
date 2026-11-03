@@ -28,7 +28,8 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 | `STRIPE_PROFILE_ID` | The Stripe profile id advertised to UCP platforms. |
 | `X402_PAY_TO`, `X402_NETWORK`, `X402_FACILITATOR_URL` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC, x402.org facilitator), where the demo café wallet takes the payments. `eip155:8453` is Base mainnet (real USDC, PayAI's keyless facilitator by default), where payments go only to `X402_PAY_TO`. |
 | `MPP_NETWORK_ID`, `MPP_CHALLENGE_SECRET` | MPP agent payments by card or Link into your Stripe (needs Stripe's MPP access). |
-| `RESEND_API_KEY`, `MAIL_FROM` | Real email delivery, QR embedded as an inline image. |
+| `CLOUDFLARE_EMAIL_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Real email through Cloudflare Email Sending (token: Account > Email Sending > Edit), from `MAIL_SENDER` (default `orders@agentpickup.app`). The demo caps sends at 3 per address and 100 a day. |
+| `RESEND_API_KEY`, `MAIL_FROM` | Real email through Resend instead. |
 | `STAFF_KEY` | Locks the scanner. Without it the demo runs with `allowOpenStaff`. |
 | `ADMIN_KEY` | Read waitlist signups at `/admin/waitlist?key=…`. |
 | `SIGNING_KEY_PEM`, `AP2_SIGNING_KEY_PEM` | Pass signing (Ed25519) and AP2 merchant signatures (ES256). Generated into `data/` if unset. |
@@ -87,6 +88,20 @@ const pickup = createCollect({
 
 app.route("/", pickup.app); // any Hono app; pickup.app.fetch works anywhere
 ```
+
+### Email
+
+Each paid order gets an email with the QR (inline) and the pickup code, and a second one when it's marked
+ready. Both have a plain-text part, and replies go to the shop's `supportEmail`. Mailers:
+
+- `cloudflareMailer({ accountId, apiToken })`: Cloudflare Email Sending, from a domain onboarded to it.
+- `resendMailer({ apiKey })`: Resend.
+- `cappedMailer(mailer, { perRecipientPerDay, perDay })`: caps for a public demo, so it can't be used to email
+  people at will.
+- `outboxMailer()`: no delivery; emails are kept for the order page and previews.
+
+A failed send never blocks an order: it's recorded on the order's `pass.emailed` event, with the provider's
+message id when it went through.
 
 ### Storage
 
@@ -272,9 +287,9 @@ See [TODO.md](TODO.md) for what's built and what's next.
   the thanks page confirming the session, the hold (`requires_capture`, nothing taken), the scan capturing
   it in full, a second scan refused, and a no-show releasing the hold (`canceled`, nothing ever taken).
   MPP and UCP/ACP Shared Payment Token charges have still only run against a stand-in.
-- Email: the Resend mailer has delivered real pickup emails (the QR email and the "ready" email) through
-  the Resend API (2026-11-03, Resend's test sender), and when Resend refuses a send the order carries on
-  with the failure recorded.
+- Email: real pickup emails (the QR email and the "ready" email) have gone out through Resend and through
+  Cloudflare Email Sending from orders@agentpickup.app (2026-11-03); when a provider refuses a send the
+  order carries on with the failure recorded.
 - x402 is tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its
   refund authorization passes PayAI's verification.
 - Square has run end to end against a real sandbox, including the live "ready" webhook: staff marking an order

@@ -176,9 +176,10 @@ export function createCollect(config: CollectConfig) {
     const preview = renderPassEmail({ ...common, qrSrc: await qrDataUri(order) });
     await store.saveEmail({ id: newId("eml"), orderId: order.id, to: order.customerEmail, subject: preview.subject, html: preview.html, at: Date.now() });
     try {
+      let messageId: string | undefined;
       if (config.mailer.delivers) {
         const mail = renderPassEmail({ ...common, qrSrc: "cid:pickup-qr" });
-        await config.mailer.send({
+        ({ id: messageId } = await config.mailer.send({
           from: merchant.fromEmail,
           to: order.customerEmail,
           subject: mail.subject,
@@ -186,9 +187,10 @@ export function createCollect(config: CollectConfig) {
           text: mail.text,
           ...(merchant.supportEmail ? { replyTo: merchant.supportEmail } : {}),
           attachments: [{ filename: "pickup-qr.png", content: await qrPng(order), contentId: "pickup-qr" }],
-        });
+        }));
       }
-      await emit("pass.emailed", order, { kind, to: order.customerEmail, delivered: config.mailer.delivers });
+      // The provider's message id, to trace a send in its logs.
+      await emit("pass.emailed", order, { kind, to: order.customerEmail, delivered: config.mailer.delivers, ...(messageId ? { messageId } : {}) });
     } catch (err) {
       console.error("[collect] email failed:", err);
       await emit("pass.emailed", order, { kind, to: order.customerEmail, delivered: false, error: String(err) });

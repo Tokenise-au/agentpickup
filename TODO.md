@@ -43,6 +43,11 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Square "ready" webhook against real Square: subscription registered through Square's API for the live Square Sandbox Café venue; staff marking ready in Square emailed the customer ~4 s later (2026-11-03)
 - [x] Multi-venue: `createVenueHost`, venues at `/v/<slug>`, admin API `/host/v1`, secrets sealed with AES-256-GCM, a shop can live under any path
 - [ ] Venue admin dashboard (the admin API exists), custom domains per venue, Stripe Connect payouts per venue
+
+## Email (2026-11-03)
+
+- [x] Cloudflare Email Sending: agentpickup.app onboarded (DKIM, bounce MX/SPF, DMARC p=reject), `cloudflareMailer`, live on the demo from orders@agentpickup.app
+- [x] Plain-text part, reply-to the shop, provider message id on `pass.emailed`, `cappedMailer` (demo: 3 per address, 100 a day), venues send from the platform domain under their own name
 - [ ] Doshii and Deliverect connectors (need partner API access)
 
 ## Roadmap to production

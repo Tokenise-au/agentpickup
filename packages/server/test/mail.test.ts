@@ -56,6 +56,7 @@ test("cloudflare mailer: sends the pass email with the QR inline, a text part an
 
   const emailed = (await store.listEvents(order.id)).find((e) => e.type === "pass.emailed");
   assert.equal(emailed?.data?.delivered, true);
+  assert.equal(emailed?.data?.messageId, "<m1@agentpickup.app>");
   shop.stop();
 });
 

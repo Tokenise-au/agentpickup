@@ -165,7 +165,7 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
   const heading = kind === "ready" ? "Your order is ready" : "Your order is paid";
   const lead =
     kind === "ready"
-      ? `Come by ${esc(merchant.location.name)} and show this code at the counter.`
+      ? `Your order is waiting at ${esc(merchant.location.name)}. Show this code to collect it.`
       : `Show this code at ${esc(merchant.location.name)} to collect your order.`;
   const subject = kind === "ready" ? `Ready to collect: ${merchant.name} order` : `Your ${merchant.name} order: show this QR to collect`;
   const rows = order.items
@@ -222,7 +222,7 @@ export function renderPassEmail(input: PassEmailInput): { subject: string; html:
   const text = [
     `${merchant.name}: ${heading}`,
     "",
-    kind === "ready" ? `Come by ${merchant.location.name} and show your pickup code at the counter.` : `Show your pickup code at ${merchant.location.name} to collect your order.`,
+    kind === "ready" ? `Your order is waiting at ${merchant.location.name}. Show your pickup code to collect it.` : `Show your pickup code at ${merchant.location.name} to collect your order.`,
     "",
     `Pickup code: ${order.pickupCode ?? ""}`,
     `Your pass, with the QR code: ${passUrl}`,

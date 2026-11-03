@@ -6,7 +6,7 @@
   "dependencies": {
     "@agentpickup/core": "^0.2.0",
     "@agentpickup/mcp": "^0.1.1",
-    "@agentpickup/server": "^0.4.0",
+    "@agentpickup/server": "^0.5.0",
     "@hono/node-server": "^2.1.6",
     "@x402/core": "2.29.0",
     "@x402/evm": "2.29.0",

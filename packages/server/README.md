@@ -35,6 +35,9 @@ Connectors put orders on the screens staff already use: `squareConnector` for Sq
 pickup orders out, ready and collected both ways), and a connector API at `/connect/v1` any other platform
 can integrate against.
 
+Email goes through `cloudflareMailer` (Cloudflare Email Sending) or `resendMailer`, with a plain-text part,
+reply-to the shop, and `cappedMailer` for public demos.
+
 Storage is `SqliteStore` (one file) or `PostgresStore` (any pg-style client: `pg`, Neon, Supabase), or
 your own `Store`. Shops priced in other currencies take x402 through `payments.x402.toUsdCents`, and
 `payments.x402.refunds` pays USDC no-shows back through the facilitator.
