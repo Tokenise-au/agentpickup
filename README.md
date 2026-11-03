@@ -282,6 +282,29 @@ Square venue's position and hours come from Square; others set `merchant.locatio
 `openingHours` (`[{ day: 1, open: "07:00", close: "15:00" }]`, Sunday is 0). `listed: false` keeps a venue
 out, and `alsoList` adds shops that aren't venues, such as the install's own.
 
+**Open listings.** No public index answers "shops near me where my agent can order and pay", so the directory
+takes listings from other sites too. A shop describes itself in one JSON file on its own site, and registers it:
+
+```bash
+curl -X POST https://agentpickup.app/directory/v1/listings -H "Content-Type: application/json" \
+  -d '{"url":"https://yourshop.com/.well-known/agentpickup.json"}'
+```
+
+Every agentPickup shop already serves its listing at `<shop>/.well-known/agentpickup.json`, so a self-hosted
+install registers with one call. A shop running something else uses the same format (`"agentpickup": "listing/1"`,
+`name`, `url`, `location` with `lat`/`lng` and `openingHours`, `currency`, `payments`, `items`, and `order`: via
+`"agentpickup"`, `"ucp"` with its profile, or `"web"`).
+
+- The listing and every URL in it must be on the same site, over https on a domain name, so nobody can list
+  someone else's shop, and the directory never fetches private addresses.
+- A listing that says it's an agentPickup shop is checked against its live menu (`/api/catalog`), and the entry
+  takes its items and payments from there.
+- Each listing is checked again every 6 hours and dropped after a day of failed checks. `GET /directory/v1/listings`
+  shows them all; the platform lists and removes them at `/host/v1/listings`.
+- In results, `source` says who listed a shop (`"here"` or `"listed"` with the domain), and `order.via` says how an
+  agent orders. The hosted MCP server orders from listed agentPickup shops (`trustedShop`), and from no other site.
+- With sign-up on, `/connect` has a form for it too.
+
 ### Sellers sign themselves up
 
 With `signup` set, the venue host runs a sign-up wizard at `/connect` and a seller page at `/seller`, so a Square

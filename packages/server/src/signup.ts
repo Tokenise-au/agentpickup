@@ -63,6 +63,8 @@ interface SignupDeps {
   resetStaffKey(slug: string): Promise<string>;
   removeVenue(slug: string): Promise<boolean>;
   saveRequest(request: { system: string; email: string }): Promise<void>;
+  /** Register a listing URL with the directory, for shops that already take agent payments. */
+  registerListing?(url: string): Promise<{ listing: { name: string; url: string } }>;
 }
 
 /** What Square sign-in left for the next steps: the tokens, the locations, staff keys still to show once. */
@@ -154,6 +156,20 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
             <button class="btn ghost" type="submit">Let me know</button>
           </form>
         </section>
+        ${
+          deps.registerListing
+            ? `<section class="card">
+          <h2>Already take agent payments?</h2>
+          <p class="muted">If you run agentPickup yourself, or take x402 or UCP payments at a counter, publish a listing on your
+          site and add its address here. Agents then find you through ${esc(platform)}'s directory.</p>
+          <form method="post" action="/connect/listing" class="stack">
+            <label>Listing URL <input type="url" name="url" required maxlength="500" placeholder="https://yourshop.com/.well-known/agentpickup.json"></label>
+            <button class="btn ghost" type="submit">List my shop</button>
+          </form>
+          <p class="muted small">An agentPickup shop serves its listing at /.well-known/agentpickup.json already.</p>
+        </section>`
+            : ""
+        }
         <p class="muted small">Already connected? <a href="/seller">Manage your venue</a>.</p>`,
       ),
     ),
@@ -168,6 +184,24 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     }
     await deps.saveRequest({ system, email });
     return c.html(page("Thanks", `<p class="lede">We'll email ${esc(email)} when ${esc(platform)} works with ${esc(system)}.</p><p><a href="/">Back to ${esc(platform)}</a></p>`));
+  });
+
+  app.post("/connect/listing", async (c) => {
+    if (!deps.registerListing) return c.redirect("/connect");
+    const form = await c.req.parseBody();
+    try {
+      const { listing } = await deps.registerListing(String(form.url ?? ""));
+      return c.html(
+        page(
+          "You're listed",
+          `<p class="lede">${esc(listing.name)} is in the directory. Agents searching nearby or for what you sell will find it.</p>
+           <p class="muted small">We check your listing every few hours, so changes to it show up on their own.</p>
+           <p><a href="/directory/v1/shops?q=${encodeURIComponent(listing.name)}">See your entry</a></p>`,
+        ),
+      );
+    } catch (err) {
+      return c.html(page("Not listed yet", `<p class="lede">${esc(err instanceof Error ? err.message : String(err))}</p><p><a class="btn" href="/connect">Back</a></p>`), 400);
+    }
   });
 
   // ---------- 2. Sign in with Square ----------

@@ -12,10 +12,18 @@ export interface ShopListing {
   location: PickupLocation;
   timeZone?: string;
   currency: string;
-  payments: { x402: { network: string } | null; card: boolean; test: boolean };
+  /** `protocols`: agent checkouts a listed shop takes besides these ("ucp", "acp", "mpp"). */
+  payments: { x402: { network: string } | null; card: boolean; test: boolean; protocols?: string[] };
   /** No real money changes hands here: test payments, or USDC on a testnet. */
   testOnly: boolean;
   items: { id: string; name: string; priceCents: number; description?: string }[];
+  /**
+   * How an agent orders: through agentPickup's API at `url` (and the MCP server's tools), through the shop's UCP
+   * checkout, or on its own site.
+   */
+  order?: { via: "agentpickup" } | { via: "ucp"; profile: string } | { via: "web"; url: string };
+  /** Where the entry came from: a shop on this install, or a listing another site registered with the directory. */
+  source?: { kind: "here" | "listed"; domain: string; listingUrl?: string; checkedAt?: number };
 }
 
 const TESTNETS = new Set(["eip155:84532"]);

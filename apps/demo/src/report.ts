@@ -161,6 +161,8 @@ export async function reportData(src: ReportSources, day: string) {
     []) as { email: string; kind: string; note: string | null; created_at: number }[];
   let venues: { slug: string; name: string; createdAt: number; running: boolean; error?: string; test: boolean; viaSignup: boolean }[] = [];
   let requests: { system: string; email: string; at: number }[] = [];
+  let listed: { name: string; url: string; domain: string; addedAt: number }[] = [];
+  let listedTotal = 0;
   if (src.hostAdmin) {
     try {
       const v = (await src.hostAdmin("/host/v1/venues")) as {
@@ -176,6 +178,11 @@ export async function reportData(src: ReportSources, day: string) {
         viaSignup: Boolean(x.settings.owner?.squareMerchantId),
       }));
       requests = ((await src.hostAdmin("/host/v1/requests")) as { requests: { system: string; email: string; at: number }[] }).requests.filter((r) => r.at >= from && r.at < to);
+      const all = ((await src.hostAdmin("/host/v1/listings")) as { listings: { addedAt: number; listing: { name: string; url: string; source?: { domain: string } } }[] }).listings;
+      listedTotal = all.length;
+      listed = all
+        .filter((r) => r.addedAt >= from && r.addedAt < to)
+        .map((r) => ({ name: r.listing.name, url: r.listing.url, domain: r.listing.source?.domain ?? "", addedAt: r.addedAt }));
     } catch (err) {
       console.error("[report] reading venues failed:", err);
     }
@@ -230,6 +237,8 @@ export async function reportData(src: ReportSources, day: string) {
       allVenues: venues,
       requests,
       partners,
+      listed,
+      listedTotal,
     },
     site: { people: byKey(rows, "page.person", day), bots: sum(rows, "page.bot", day) },
     problems: {
@@ -306,7 +315,8 @@ ${section(
    ${r.sellers.newVenues.length ? `<p style="margin:10px 0 0">New venues:</p><ul style="margin:6px 0 0;padding-left:18px">${r.sellers.newVenues.map((v) => `<li>${esc(v.name)} (/v/${esc(v.slug)})${v.test ? ", test mode" : ""}</li>`).join("")}</ul>` : ""}
    ${r.sellers.requests.length ? `<p style="margin:10px 0 0">Asked for another system:</p><ul style="margin:6px 0 0;padding-left:18px">${r.sellers.requests.map((q) => `<li>${esc(q.system)}: ${esc(q.email)}</li>`).join("")}</ul>` : ""}
    ${r.sellers.partners.length ? `<p style="margin:10px 0 0">Partner form:</p><ul style="margin:6px 0 0;padding-left:18px">${r.sellers.partners.map((p) => `<li>${esc(p.kind)}: ${esc(p.email)}${p.note ? `, "${esc(p.note)}"` : ""}</li>`).join("")}</ul>` : `<p style="margin:10px 0 0;color:#6a6a6a">No partner form entries.</p>`}
-   <p style="margin:10px 0 0;color:#6a6a6a">${r.sellers.allVenues.length} venue${r.sellers.allVenues.length === 1 ? "" : "s"} in all.</p>`,
+   ${r.sellers.listed.length ? `<p style="margin:10px 0 0">Shops that listed themselves:</p><ul style="margin:6px 0 0;padding-left:18px">${r.sellers.listed.map((l) => `<li>${esc(l.name)} (${esc(l.domain)})</li>`).join("")}</ul>` : ""}
+   <p style="margin:10px 0 0;color:#6a6a6a">${r.sellers.allVenues.length} venue${r.sellers.allVenues.length === 1 ? "" : "s"} here and ${r.sellers.listedTotal} listed from other sites.</p>`,
 )}
 ${section("Site", `<p style="margin:6px 0 0">Pages viewed by people (${people}); ${r.site.bots} by bots and crawlers:</p>${list(r.site.people, "No visits from people.")}`)}
 ${section(
@@ -356,6 +366,7 @@ ${section(
     ...r.sellers.newVenues.map((v) => `  new venue: ${v.name} (/v/${v.slug})`),
     ...r.sellers.requests.map((q) => `  asked for ${q.system}: ${q.email}`),
     ...r.sellers.partners.map((p) => `  partner form (${p.kind}): ${p.email}${p.note ? `, "${p.note}"` : ""}`),
+    ...r.sellers.listed.map((l) => `  listed itself: ${l.name} (${l.domain})`),
     "",
     `Site: ${people} page views by people, ${r.site.bots} by bots`,
     `Money: ${usd(r.orders.realUsdCents)} real USDC received${r.wallet?.balance ? `; demo wallet holds ${r.wallet.balance} USDC` : ""}`,

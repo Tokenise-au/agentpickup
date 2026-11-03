@@ -17,6 +17,7 @@ import { squareOAuth, type SquareLocationSummary, type SquareTokens } from "./co
 import { createCollect } from "./index.js";
 import { searchDirectory, type DirectoryQuery, type ShopListing } from "./directory.js";
 import { mountSignup, type SellerVenue, type SignupConfig } from "./signup.js";
+import { checkListingUrl, fetchListing, ListingError } from "./listing.js";
 
 /** What a platform sends to create or change a venue. Secret fields are write-only. */
 export interface VenueInput {
@@ -116,6 +117,22 @@ export interface VenueHostConfig {
   toUsdCents?: (cents: number, currency: string) => number | Promise<number>;
   /** Called for every order event at every venue, with the venue's slug, e.g. for usage reports. */
   onEvent?: (slug: string, event: CollectEvent, order: Order) => void | Promise<void>;
+  /**
+   * Listings other sites register with the directory (POST /directory/v1/listings): another agentPickup install,
+   * or any shop taking agent payments at a counter. On by default; false turns registration off. Each is checked
+   * when registered and again every `recheckHours` (default 6), and dropped after a day of failed checks.
+   */
+  listings?: false | { max?: number; recheckHours?: number; allowHttp?: boolean };
+}
+
+interface ListingRecord {
+  id: string;
+  listingUrl: string;
+  listing: ShopListing;
+  addedAt: number;
+  checkedAt: number;
+  failures: number;
+  lastError?: string;
 }
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -260,6 +277,12 @@ export function createVenueHost(cfg: VenueHostConfig) {
   const box = sealer(cfg.secretKey);
   const live = new Map<string, ReturnType<typeof createCollect>>();
   const failed = new Map<string, string>();
+  // Listings other sites register with the directory.
+  const listingCfg = cfg.listings === false ? null : { max: 500, recheckHours: 6, allowHttp: false, ...(cfg.listings ?? {}) };
+  const baseOrigin = new URL(base).origin;
+  const here = { kind: "here" as const, domain: new URL(base).hostname };
+  const listingIds = async () => (await cfg.store.getDoc<{ ids: string[] }>("listings", "index"))?.ids ?? [];
+  const listingRecord = async (id: string) => (await cfg.store.getDoc<ListingRecord>("listing", id)) ?? null;
 
   const recordOf = async (slug: string) => (await cfg.store.getDoc<VenueRecord>("venue", slug)) ?? null;
   const index = async () => (await cfg.store.getDoc<{ slugs: string[] }>("venues", "index"))?.slugs ?? [];
@@ -570,6 +593,12 @@ export function createVenueHost(cfg: VenueHostConfig) {
     return (await removeVenue(c.req.param("slug"))) ? c.json({ ok: true }) : c.json({ error: "No such venue." }, 404);
   });
   admin.get("/requests", async (c) => c.json({ requests: (await cfg.store.getDoc<{ requests: unknown[] }>("signup", "requests"))?.requests ?? [] }));
+  admin.get("/listings", async (c) => {
+    const list = [];
+    for (const id of await listingIds()) list.push(await listingRecord(id));
+    return c.json({ listings: list.filter(Boolean) });
+  });
+  admin.delete("/listings/:id", async (c) => ((await removeListing(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "No such listing." }, 404)));
   app.route("/host/v1", admin);
 
   // ---------- Square's one webhook for every venue ----------
@@ -634,24 +663,127 @@ export function createVenueHost(cfg: VenueHostConfig) {
       resetStaffKey,
       removeVenue,
       saveRequest,
+      ...(listingCfg ? { registerListing: async (url: string) => registerListing(url) } : {}),
     });
   }
 
+  // ---------- listings other sites register ----------
+
+  /** Fetch and check a listing. An agentPickup shop is checked against its live menu and payments, not its file. */
+  async function checkListing(url: URL): Promise<ShopListing> {
+    const doFetch = cfg.fetch ?? fetch;
+    const listing = await fetchListing(url, doFetch);
+    if (listing.order?.via !== "agentpickup") return listing;
+    let live: { currency?: string; items?: { id: string; name: string; priceCents: number; description?: string }[]; payments?: { x402?: { network: string } | null; card?: boolean; test?: boolean } };
+    try {
+      const res = await doFetch(`${listing.url}/api/catalog`, { redirect: "manual", signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`it answered ${res.status}`);
+      live = await res.json();
+    } catch (err) {
+      throw new ListingError(`The listing says it's an agentPickup shop, but its menu at ${listing.url}/api/catalog didn't load (${err instanceof Error ? err.message : err}).`);
+    }
+    const payments = { x402: live.payments?.x402 ? { network: live.payments.x402.network } : null, card: Boolean(live.payments?.card), test: Boolean(live.payments?.test) };
+    return {
+      ...listing,
+      currency: (live.currency ?? listing.currency).toLowerCase(),
+      items: (live.items ?? []).slice(0, 200).map((i) => ({ id: i.id, name: i.name, priceCents: i.priceCents, ...(i.description ? { description: i.description } : {}) })),
+      payments,
+      testOnly: !(payments.card || (payments.x402 && payments.x402.network !== "eip155:84532")),
+    };
+  }
+
+  /** Someone registers their listing's URL. Registering again, or another file for the same shop, updates it. */
+  async function registerListing(raw: unknown): Promise<ListingRecord> {
+    if (!listingCfg) throw new ListingError("This directory doesn't take listings.");
+    const url = checkListingUrl(raw, listingCfg.allowHttp);
+    if (url.origin === baseOrigin) throw new ListingError("Shops on this site are in the directory already.");
+    const listing = await checkListing(url);
+    const ids = await listingIds();
+    let id = createHash("sha256").update(url.href).digest("hex").slice(0, 16);
+    for (const other of ids) if ((await listingRecord(other))?.listing.url === listing.url) id = other;
+    const existing = await listingRecord(id);
+    if (!existing && ids.length >= listingCfg.max) throw new ListingError("The directory is full for now.");
+    const now = Date.now();
+    const record: ListingRecord = { id, listingUrl: url.href, listing, addedAt: existing?.addedAt ?? now, checkedAt: now, failures: 0 };
+    await cfg.store.putDoc("listing", id, record);
+    if (!ids.includes(id)) await cfg.store.putDoc("listings", "index", { ids: [...ids, id] });
+    return record;
+  }
+
+  async function removeListing(id: string) {
+    const ids = await listingIds();
+    if (!ids.includes(id)) return false;
+    await cfg.store.putDoc("listings", "index", { ids: ids.filter((x) => x !== id) });
+    return true;
+  }
+
+  /** Check each listing again once it's `recheckHours` old; drop one that has failed for a day. Runs hourly. */
+  async function recheckListings(now = Date.now()) {
+    if (!listingCfg) return;
+    for (const id of await listingIds()) {
+      const r = await listingRecord(id);
+      if (!r || now - r.checkedAt < listingCfg.recheckHours * 3600_000) continue;
+      try {
+        await cfg.store.putDoc("listing", id, { ...r, listing: await checkListing(new URL(r.listingUrl)), checkedAt: now, failures: 0, lastError: undefined });
+      } catch (err) {
+        const failures = r.failures + 1;
+        if (failures * listingCfg.recheckHours >= 24) {
+          await removeListing(id);
+          console.warn(`[venues] dropped the listing ${r.listingUrl} after a day of failed checks:`, err);
+        } else {
+          await cfg.store.putDoc("listing", id, { ...r, checkedAt: now, failures, lastError: err instanceof Error ? err.message : String(err) });
+        }
+      }
+    }
+  }
+
+  /** A listed shop that runs agentPickup, which the hosted MCP server may order from. */
+  async function isListedShop(shopBase: string) {
+    const want = shopBase.replace(/\/+$/, "");
+    for (const id of await listingIds()) {
+      const r = await listingRecord(id);
+      if (r?.listing.order?.via === "agentpickup" && r.listing.url === want) return true;
+    }
+    return false;
+  }
+
   // ---------- the public directory ----------
-  /** Every listed venue (and alsoList shop) that's running. */
+  /** Every listed venue (and alsoList shop) that's running, then the listings other sites registered. */
   async function listings(): Promise<ShopListing[]> {
     await ready;
     const shops: ShopListing[] = [];
-    for (const extra of cfg.alsoList ?? []) shops.push(await extra.listing());
+    for (const extra of cfg.alsoList ?? []) shops.push({ ...(await extra.listing()), source: here });
     for (const slug of await index()) {
       const venue = live.get(slug);
       const record = venue ? await recordOf(slug) : null;
-      if (venue && record && record.settings.listed !== false) shops.push(await venue.listing());
+      if (venue && record && record.settings.listed !== false) shops.push({ ...(await venue.listing()), source: here });
+    }
+    for (const id of await listingIds()) {
+      const r = await listingRecord(id);
+      if (r) shops.push(r.listing);
     }
     return shops;
   }
   const num = (v: string | undefined) => (v === undefined || v === "" ? undefined : Number(v));
-  app.use("/directory/*", cors({ origin: "*", allowMethods: ["GET"] }));
+  app.use("/directory/*", cors({ origin: "*", allowMethods: ["GET", "POST"] }));
+  app.post("/directory/v1/listings", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { url?: string };
+    try {
+      const record = await registerListing(body.url);
+      return c.json({ listing: record.listing, listingUrl: record.listingUrl, checkedAt: record.checkedAt }, 201);
+    } catch (err) {
+      if (err instanceof ListingError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+  });
+  app.get("/directory/v1/listings", async (c) => {
+    const list = [];
+    for (const id of await listingIds()) {
+      const r = await listingRecord(id);
+      if (r) list.push({ name: r.listing.name, url: r.listing.url, domain: r.listing.source?.domain, listingUrl: r.listingUrl, addedAt: r.addedAt, checkedAt: r.checkedAt });
+    }
+    return c.json({ listings: list });
+  });
   app.get("/directory/v1/shops", async (c) => {
     const query: DirectoryQuery = {
       q: c.req.query("q")?.slice(0, 100),
@@ -680,6 +812,8 @@ export function createVenueHost(cfg: VenueHostConfig) {
 
   const renewTimer = square ? setInterval(() => void renewSquareTokens(), 3600_000) : null;
   renewTimer?.unref();
+  const listingTimer = listingCfg ? setInterval(() => void recheckListings(), 3600_000) : null;
+  listingTimer?.unref();
 
   return {
     app,
@@ -690,10 +824,15 @@ export function createVenueHost(cfg: VenueHostConfig) {
     listings,
     /** Renew Square access for sellers whose token is a week old. Runs hourly by itself. */
     renewSquareTokens,
+    registerListing,
+    /** Check listings again once they're due. Runs hourly by itself. */
+    recheckListings,
+    isListedShop,
     /** The running shop for a venue, for jobs that need it (sweeps run on their own). */
     venue: (slug: string) => live.get(slug) ?? null,
     stop() {
       if (renewTimer) clearInterval(renewTimer);
+      if (listingTimer) clearInterval(listingTimer);
       for (const v of live.values()) v.stop();
     },
   };

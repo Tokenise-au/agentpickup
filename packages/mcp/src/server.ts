@@ -17,6 +17,11 @@ export interface PickupMcpOptions {
   allowOtherShops?: boolean;
   /** An agentPickup directory (<host>/directory/v1/shops). Adds find_shops: shops near someone that sell what they want. */
   directoryUrl?: string;
+  /**
+   * Shops on other hosts a hosted server may still order from, such as agentPickup shops its directory has checked.
+   * Called with the shop's base URL.
+   */
+  trustedShop?: (shopBase: string) => boolean | Promise<boolean>;
   /** How requests reach the shop. Defaults to global fetch; a shop hosting its own server passes its app's fetch. */
   fetch?: Fetch;
   /** The wallet that pays. Without one, pay_order returns the price and pay link for another x402 client. */
@@ -34,6 +39,8 @@ type DirectoryShop = {
   openNow: boolean | null;
   items: { id: string; name: string; priceCents: number }[];
   itemCount: number;
+  order?: { via: "agentpickup" } | { via: "ucp"; profile: string } | { via: "web"; url: string };
+  source?: { kind: "here" | "listed"; domain: string };
 };
 
 type Order = {
@@ -78,7 +85,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
   const home = shopBase(homeUrl);
   const doFetch: Fetch = opts.fetch ?? ((req) => fetch(req));
 
-  function shopFor(shopUrl?: string): string {
+  async function shopFor(shopUrl?: string): Promise<string> {
     if (!shopUrl) return home;
     let url: URL;
     try {
@@ -88,9 +95,12 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
     }
     // Shops on this server's own host: the home shop and its venues.
     if (url.origin === homeUrl.origin) return shopBase(url);
-    if (!opts.allowOtherShops) throw new ToolError(`This server orders from shops on ${homeUrl.origin} only.`);
-    if (url.protocol !== "https:" && url.hostname !== "localhost") throw new ToolError("Shops must be served over https.");
-    return shopBase(url);
+    if (opts.allowOtherShops || opts.trustedShop) {
+      if (url.protocol !== "https:" && url.hostname !== "localhost") throw new ToolError("Shops must be served over https.");
+      if (opts.allowOtherShops || (await opts.trustedShop!(shopBase(url)))) return shopBase(url);
+      throw new ToolError(`This server orders from shops on ${homeUrl.origin} and agentPickup shops its directory lists.`);
+    }
+    throw new ToolError(`This server orders from shops on ${homeUrl.origin} only.`);
   }
 
   async function call(shop: string, path: string, init?: RequestInit) {
@@ -154,6 +164,8 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
               s.distanceKm !== undefined ? `${s.distanceKm} km` : null,
               s.openNow === true ? "open now" : s.openNow === false ? "closed now" : null,
               s.testOnly ? "test shop, no real money" : null,
+              s.source?.kind === "listed" ? `listed by ${s.source.domain}` : null,
+              s.order?.via === "ucp" ? "orders through its UCP checkout" : s.order?.via === "web" ? "orders on its own website" : null,
             ].filter(Boolean);
             const items = s.items.slice(0, 3).map((i) => `${i.name} ${money(i.priceCents, s.currency)}`).join(", ");
             return `- ${s.name}${facts.length ? ` (${facts.join(", ")})` : ""}${s.location.address ? `, ${s.location.address}` : ""}${items ? `: ${items}` : ""}`;
@@ -167,6 +179,10 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
               openNow: s.openNow,
               testOnly: s.testOnly,
               payments: { x402: s.payments.x402?.network ?? null, test: s.payments.test },
+              listedBy: s.source?.kind === "listed" ? s.source.domain : null,
+              // agentpickup: use get_shop and create_pickup_order. ucp or web: order there instead.
+              orderVia: s.order?.via ?? "agentpickup",
+              ...(s.order?.via === "ucp" ? { ucpProfile: s.order.profile } : s.order?.via === "web" ? { orderUrl: s.order.url } : {}),
               items: s.items.map((i) => ({ id: i.id, name: i.name, price: money(i.priceCents, s.currency) })),
               moreItems: Math.max(0, s.itemCount - s.items.length),
             })),
@@ -185,7 +201,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guarded(async (args: { shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const data = await call(shop, "/api/catalog");
       const merchant = data.merchant as { name: string; location?: { name?: string; address?: string; hours?: string } };
       const currency = String(data.currency ?? "usd");
@@ -226,7 +242,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     guarded(async (args: { items: { id: string; qty: number }[]; email: string; name?: string; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       // Pay over x402 where the shop takes it; a test shop marks the order paid straight away.
       const { payments } = (await call(shop, "/api/catalog")) as { payments: { x402?: unknown; test?: boolean } };
       const rail = payments.x402 ? "x402" : payments.test ? "test" : null;
@@ -264,7 +280,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     guarded(async (args: { order_id: string; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const payUrl = `${shop}/api/orders/${encodeURIComponent(args.order_id)}/pay`;
       if (!opts.payer) {
         const res = await doFetch(new Request(payUrl, { method: "POST" }));
@@ -301,7 +317,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guarded(async (args: { order_id: string; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const { order } = (await call(shop, `/api/orders/${encodeURIComponent(args.order_id)}`)) as { order: Order };
       const words: Record<string, string> = {
         awaiting_payment: "is waiting for payment",
@@ -325,7 +341,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
     },
     guarded(async (args: { order_id: string; shop_url?: string }) => {
       if (!opts.payer) throw new ToolError("No wallet is set up here. The pass was emailed to the buyer when the order was paid.");
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const res = await opts.payer.signIn(`${shop}/api/orders/${encodeURIComponent(args.order_id)}/pass`, doFetch);
       if (!res.ok) throw new ToolError(await errorOf(res, `The shop answered ${res.status}.`));
       const pass = (await res.json()) as { passUrl: string; pickupCode: string; qrContent: string };
@@ -371,7 +387,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     guarded(async (args: { organiser_name: string; organiser_email: string; title?: string; closes_in_minutes?: number; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const data = (await call(shop, "/api/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -402,7 +418,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     guarded(async (args: { code: string; items: { id: string; qty: number }[]; email: string; name: string; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const { payments } = (await call(shop, "/api/catalog")) as { payments: { x402?: unknown; test?: boolean } };
       const rail = payments.x402 ? "x402" : payments.test ? "test" : null;
       if (!rail) throw new ToolError("This shop doesn't take agent payments.");
@@ -430,7 +446,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     guarded(async (args: { code: string; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const { group } = (await call(shop, `/api/groups/${encodeURIComponent(args.code)}`)) as { group: GroupView };
       return reply(
         groupSummary(group) + (group.combined ? ` The shop's order is ${group.combined.status}.` : ""),
@@ -448,7 +464,7 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
     guarded(async (args: { code: string; organiser_key: string; shop_url?: string }) => {
-      const shop = shopFor(args.shop_url);
+      const shop = await shopFor(args.shop_url);
       const { group } = (await call(shop, `/api/groups/${encodeURIComponent(args.code)}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

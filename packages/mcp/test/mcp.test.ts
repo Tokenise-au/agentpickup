@@ -239,3 +239,66 @@ test("group orders through the MCP: start, two agents join and pay, close, and t
   const combined = (await shop.store.listOrders({ statuses: ["paid"], limit: 10 })).find((o) => o.rail === "group")!;
   assert.deepEqual(combined.items.map((i) => i.note), ["for Sam", "for Alex"]);
 });
+
+test("a hosted server finds shops other sites listed, orders from listed agentPickup shops, and refuses the rest", async () => {
+  const corner = setupShop();
+  const host = createVenueHost({
+    baseUrl: "https://shop.test",
+    store: testStore(),
+    storeFor: () => testStore(),
+    mailer: outboxMailer(),
+    secretKey: "x".repeat(40),
+    adminKeys: ["k"],
+    fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      return url.host === "corner.test" ? corner.collect.app.fetch(new Request(url.href.replace("corner.test", "shop.test"), init)) : new Response("no", { status: 404 });
+    }) as typeof fetch,
+  });
+  // corner.test serves the same shop as shop.test in this test; its listing must name corner.test.
+  const doc = (await (await corner.call("/.well-known/agentpickup.json")).json()) as Record<string, unknown>;
+  const listingFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.href === "https://corner.test/.well-known/agentpickup.json") return Response.json({ ...doc, url: "https://corner.test" });
+    if (url.host === "corner.test") return corner.collect.app.fetch(new Request(url.href.replace("corner.test", "shop.test"), init));
+    return new Response("no", { status: 404 });
+  }) as typeof fetch;
+  const listingHost = createVenueHost({
+    baseUrl: "https://directory.test",
+    store: testStore(),
+    storeFor: () => testStore(),
+    mailer: outboxMailer(),
+    secretKey: "y".repeat(40),
+    adminKeys: ["k"],
+    fetch: listingFetch,
+  });
+  const reg = await listingHost.app.request("https://directory.test/directory/v1/listings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://corner.test/.well-known/agentpickup.json" }),
+  });
+  assert.equal(reg.status, 201, await reg.clone().text());
+
+  const server = createPickupMcpServer({
+    shopUrl: "https://directory.test",
+    fetch: (req) => (new URL(req.url).host === "directory.test" ? listingHost.app.fetch(req) : listingFetch(req)),
+    directoryUrl: "https://directory.test/directory/v1/shops",
+    trustedShop: (base) => listingHost.isListedShop(base),
+  });
+  const client = new Client({ name: "test", version: "1.0.0" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    return { text: res.content[0].text, isError: Boolean(res.isError) };
+  };
+  const found = await call("find_shops", {});
+  assert.match(found.text, /Test Café \(test shop, no real money, listed by corner\.test\)/);
+  const menu = await call("get_shop", { shop_url: "https://corner.test" });
+  assert.equal(menu.isError, false, menu.text);
+  assert.match(menu.text, /^Test Café/);
+  const other = await call("get_shop", { shop_url: "https://unlisted.test" });
+  assert.equal(other.isError, true);
+  assert.match(other.text, /shops its directory lists/);
+  host.stop();
+  listingHost.stop();
+});

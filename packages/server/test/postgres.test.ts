@@ -27,6 +27,7 @@ await import("./receipts.test.js");
 await import("./directory.test.js");
 await import("./signup.test.js");
 await import("./groups.test.js");
+await import("./listing.test.js");
 after(() => closeTestDb());
 
 const order = (id: string): Order => ({

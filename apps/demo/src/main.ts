@@ -195,6 +195,9 @@ app.use("/mcp", limit(60));
 app.use("/v/*", limit(60));
 app.use("/host/*", limit(30));
 app.use("/directory/*", limit(60));
+app.use("/directory/v1/listings", (c, next) => (c.req.method === "POST" ? listingLimit(c, next) : next()));
+// Registering a listing makes this server fetch someone's site, so it's limited harder.
+const listingLimit = limit(5);
 // Square's webhook comes from a few Square servers for every venue, so it isn't limited per address.
 const connectLimit = limit(30);
 app.use("/connect/*", (c, next) => (c.req.path === "/connect/square/webhook" ? next() : connectLimit(c, next)));
@@ -333,8 +336,15 @@ app.post("/admin/report/send", async (c) => {
 const onVenueHost = (req: Request) => /^\/(v|directory)\//.test(new URL(req.url).pathname);
 const mcp = createMcpHandler({
   shopUrl: baseUrl,
-  fetch: (req) => (venueHost && onVenueHost(req) ? venueHost.app.fetch(req) : collect.app.fetch(req)),
+  // This host's shops are answered in-process; agentPickup shops the directory lists are called over the internet.
+  fetch: (req) =>
+    new URL(req.url).origin !== new URL(baseUrl).origin
+      ? fetch(req)
+      : venueHost && onVenueHost(req)
+        ? venueHost.app.fetch(req)
+        : collect.app.fetch(req),
   directoryUrl: venueHost ? `${baseUrl}/directory/v1/shops` : undefined,
+  trustedShop: venueHost ? (shopBase) => venueHost.isListedShop(shopBase) : undefined,
   payer:
     demoAgent && demoAgentKey
       ? {

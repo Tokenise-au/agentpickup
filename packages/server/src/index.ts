@@ -21,6 +21,7 @@ import {
 import type { CatalogItem, CollectConfig, MerchantProfile } from "./config.js";
 import { listingOf, type ShopListing } from "./directory.js";
 import { createGroups, GroupError } from "./groups.js";
+import { listingDocument } from "./listing.js";
 import { mountConnect } from "./connect.js";
 import type { ConnectorContext, ShopProfile } from "./connectors/types.js";
 import { paymentSummary, renderPassEmail, type PassEmailKind } from "./mail.js";
@@ -579,6 +580,8 @@ export function createCollect(config: CollectConfig) {
   app.get("/collect-assets/jsQR.js", asset(jsqr));
   app.get("/collect-assets/scanner.js", asset(scannerJs));
   app.get("/.well-known/collect-keys.json", (c) => c.json(toJwks([key])));
+  // This shop's open listing, for any directory to register (see listing.ts).
+  app.get("/.well-known/agentpickup.json", async (c) => c.json(listingDocument(await listing())));
   app.get("/.well-known/did.json", (c) => c.json(didDocument(base, key)));
   if (basePath) app.get("/did.json", (c) => c.json(didDocument(base, key)));
   app.get("/openapi.json", (c) =>
@@ -1099,14 +1102,17 @@ export function createCollect(config: CollectConfig) {
   /** This shop as the agent directory shows it. */
   async function listing(): Promise<ShopListing> {
     await ready;
-    return listingOf({
-      url: base,
-      merchant,
-      currency,
-      timeZone,
-      items: menu,
-      payments: { x402: x402 ? { network: x402.network ?? "eip155:84532" } : null, card: Boolean(card), test: Boolean(config.payments.test) },
-    });
+    return {
+      ...listingOf({
+        url: base,
+        merchant,
+        currency,
+        timeZone,
+        items: menu,
+        payments: { x402: x402 ? { network: x402.network ?? "eip155:84532" } : null, card: Boolean(card), test: Boolean(config.payments.test) },
+      }),
+      order: { via: "agentpickup" },
+    };
   }
 
   return {
