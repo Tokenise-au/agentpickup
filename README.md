@@ -122,6 +122,14 @@ apps/demo         the product site: landing page, live demo shop, waitlist
 The repo folder is still called `collect402`; the product and packages are agentPickup.
 See [TODO.md](TODO.md) for what's built and what's next.
 
+## Licence
+
+- `packages/core` (`@agentpickup/core`, the pickup-pass format and verifier) is **Apache-2.0**, so anyone can
+  issue and check passes.
+- Everything else, including `@agentpickup/server`, the MCP server and the demo, is **FSL-1.1-ALv2**
+  (Functional Source License): free to read, run and self-host for your own shop or platform, but not to
+  offer a competing product. Each release turns into Apache-2.0 two years after it ships. See `LICENSE.md`.
+
 ## Not done yet
 
 - Stripe, MPP, UCP/ACP SPT payments and Resend are tested against fakes, not real test keys. x402 is

@@ -3,6 +3,8 @@
   "version": "0.0.1",
   "type": "module",
   "description": "Signed pickup passes: mint and verify the QR a customer shows at the counter.",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "license": "Apache-2.0"
 }

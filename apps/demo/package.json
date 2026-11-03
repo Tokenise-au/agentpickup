@@ -7,5 +7,6 @@
     "@agentpickup/server": "*",
     "@hono/node-server": "^2.1.6",
     "hono": "^4.13.16"
-  }
+  },
+  "license": "FSL-1.1-ALv2"
 }

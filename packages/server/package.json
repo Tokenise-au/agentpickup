@@ -18,5 +18,5 @@
     "qrcode": "^1.5.4",
     "stripe": "^23.1.0"
   },
-  "license": "Apache-2.0"
+  "license": "FSL-1.1-ALv2"
 }
