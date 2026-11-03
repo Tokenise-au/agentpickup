@@ -5,7 +5,7 @@ import { createPickupMcpServer } from "./server.js";
 import { walletPayer } from "./wallet.js";
 
 const env = process.env;
-const shopUrl = env.AGENTPICKUP_SHOP_URL || "https://web-production-3cfc1.up.railway.app";
+const shopUrl = env.AGENTPICKUP_SHOP_URL || "https://agentpickup.app";
 const key = env.AGENTPICKUP_WALLET_KEY?.trim();
 if (key && !/^0x[0-9a-fA-F]{64}$/.test(key)) {
   console.error("AGENTPICKUP_WALLET_KEY must be a 0x-prefixed 32-byte hex private key.");

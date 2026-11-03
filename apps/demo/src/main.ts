@@ -143,6 +143,17 @@ function limit(perMinute: number): MiddlewareHandler {
 }
 
 const app = new Hono();
+
+// www.<domain> answers with a permanent redirect to the bare domain, keeping the method (308).
+const publicHost = new URL(baseUrl).host;
+app.use("*", async (c, next) => {
+  const host = c.req.header("host");
+  if (host && host === `www.${publicHost}`) {
+    const url = new URL(c.req.url);
+    return c.redirect(`${baseUrl}${url.pathname}${url.search}`, 308);
+  }
+  return next();
+});
 app.use("/api/orders", limit(20));
 app.use("/api/waitlist", limit(10));
 app.use("/api/demo/*", limit(30));

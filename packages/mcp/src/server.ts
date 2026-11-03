@@ -5,7 +5,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { errorOf, usd, type Fetch, type Payer } from "./wallet.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 
 export interface PickupMcpOptions {
   /** The agentPickup shop this server orders from. */

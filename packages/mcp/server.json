@@ -8,11 +8,11 @@
     "source": "github",
     "subfolder": "packages/mcp"
   },
-  "version": "0.1.0",
-  "websiteUrl": "https://web-production-3cfc1.up.railway.app",
+  "version": "0.1.1",
+  "websiteUrl": "https://agentpickup.app",
   "icons": [
     {
-      "src": "https://web-production-3cfc1.up.railway.app/favicon.svg",
+      "src": "https://agentpickup.app/favicon.svg",
       "mimeType": "image/svg+xml"
     }
   ],
@@ -20,7 +20,7 @@
     {
       "registryType": "npm",
       "identifier": "@agentpickup/mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },
@@ -56,7 +56,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://web-production-3cfc1.up.railway.app/mcp"
+      "url": "https://agentpickup.app/mcp"
     }
   ]
 }

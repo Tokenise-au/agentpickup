@@ -55,7 +55,7 @@ real goods need that raised.
 (Sign-In-With-X). The demo hosts it at `/mcp`, paying with the demo agent's wallet:
 
 ```json
-{ "mcpServers": { "agentpickup": { "type": "http", "url": "https://web-production-3cfc1.up.railway.app/mcp" } } }
+{ "mcpServers": { "agentpickup": { "type": "http", "url": "https://agentpickup.app/mcp" } } }
 ```
 
 Run it locally with `npx -y @agentpickup/mcp` and `AGENTPICKUP_SHOP_URL` / `AGENTPICKUP_WALLET_KEY`. It's listed
