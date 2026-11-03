@@ -1,10 +1,53 @@
 {
   "name": "@agentpickup/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Signed pickup passes: mint and verify the QR a customer shows at the counter (Ed25519 JWS).",
   "type": "module",
-  "description": "Signed pickup passes: mint and verify the QR a customer shows at the counter.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
-  "license": "Apache-2.0"
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "keywords": [
+    "x402",
+    "mpp",
+    "ucp",
+    "acp",
+    "ap2",
+    "agentic-commerce",
+    "agent-payments",
+    "click-and-collect",
+    "pickup",
+    "qr"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dav3trad3r/agentpickup.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/dav3trad3r/agentpickup#readme",
+  "bugs": {
+    "url": "https://github.com/dav3trad3r/agentpickup/issues"
+  },
+  "author": "Dave Hallett",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -1,13 +1,58 @@
 {
   "name": "@agentpickup/server",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "The pickup layer for agent payments: x402, MPP, UCP (+AP2), ACP and card checkout in; a signed QR pickup pass out; scan to hand over and settle.",
   "type": "module",
-  "description": "Click-and-collect server: card (Stripe) and agent (x402) checkout, emailed QR passes, scan-to-collect with capture on handover.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "static",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "keywords": [
+    "x402",
+    "mpp",
+    "ucp",
+    "acp",
+    "ap2",
+    "agentic-commerce",
+    "agent-payments",
+    "click-and-collect",
+    "pickup",
+    "qr"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dav3trad3r/agentpickup.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/dav3trad3r/agentpickup#readme",
+  "bugs": {
+    "url": "https://github.com/dav3trad3r/agentpickup/issues"
+  },
+  "author": "Dave Hallett",
+  "license": "FSL-1.1-ALv2",
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@agentpickup/core": "*",
+    "@agentpickup/core": "^0.1.0",
     "@hono/node-server": "^2.1.6",
     "@x402/core": "2.29.0",
     "@x402/evm": "2.29.0",
@@ -17,6 +62,5 @@
     "mppx": "^0.17.0",
     "qrcode": "^1.5.4",
     "stripe": "^23.1.0"
-  },
-  "license": "FSL-1.1-ALv2"
+  }
 }

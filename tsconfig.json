@@ -8,8 +8,17 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"],
-    "noEmit": true
+    "types": [
+      "node"
+    ],
+    "noEmit": true,
+    "customConditions": [
+      "source"
+    ]
   },
-  "include": ["packages/*/src", "packages/*/test", "apps/*/src"]
+  "include": [
+    "packages/*/src",
+    "packages/*/test",
+    "apps/*/src"
+  ]
 }

@@ -1,6 +1,6 @@
-node_modules/
-data/
-.env
 *.db
 *.db-*
+.env
+data/
 dist/
+node_modules/
