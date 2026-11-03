@@ -11,7 +11,7 @@ import { generateSigningKeyPem, newId } from "@agentpickup/core";
 import { createMcpHandler, walletPayer } from "@agentpickup/mcp";
 import { createCollect, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
 import { privateKeyToAccount } from "viem/accounts";
-import { createDemoAgent, DEMO_NETWORK } from "./demo-agent.js";
+import { createDemoAgent, DEMO_NETWORKS, TESTNET } from "./demo-agent.js";
 
 const env = process.env;
 const port = Number(env.PORT ?? 8402);
@@ -39,14 +39,16 @@ function ap2Key(): string {
 
 const store = new SqliteStore(join(dataDir, "collect.db"));
 
-// The demo's testnet wallets (Base Sepolia). On testnet the café's own address is the payTo, so it can
-// hand test USDC back to the agent. On any other network, payments go to X402_PAY_TO (the owner's
-// wallet) and the demo keys, which sit in server config, never touch real money.
-const x402Network = (env.X402_NETWORK as `${string}:${string}`) || DEMO_NETWORK;
-const onTestnet = x402Network === DEMO_NETWORK;
-const demoAgentKey = onTestnet ? (env.DEMO_AGENT_KEY as `0x${string}` | undefined) : undefined;
-const demoCafeKey = onTestnet ? (env.DEMO_CAFE_KEY as `0x${string}` | undefined) : undefined;
+// The demo's wallets. On Base Sepolia the café's own address is the payTo, so it can hand test USDC back
+// to the agent. On Base mainnet, payments go to X402_PAY_TO (the owner's wallet): the café key, which sits
+// in server config, never receives real money, and the owner tops the agent up by hand.
+const x402Network = (env.X402_NETWORK as `${string}:${string}`) || TESTNET;
+const demoNetwork = DEMO_NETWORKS[x402Network];
+const demoAgentKey = demoNetwork ? (env.DEMO_AGENT_KEY as `0x${string}` | undefined) : undefined;
+const demoCafeKey = x402Network === TESTNET ? (env.DEMO_CAFE_KEY as `0x${string}` | undefined) : undefined;
 const x402PayTo = demoCafeKey ? privateKeyToAccount(demoCafeKey).address : env.X402_PAY_TO;
+// x402.org settles testnet only; PayAI settles Base mainnet with no account or key.
+const x402Facilitator = env.X402_FACILITATOR_URL || demoNetwork?.facilitator;
 
 const collect = createCollect({
   baseUrl,
@@ -73,7 +75,7 @@ const collect = createCollect({
     card: env.STRIPE_SECRET_KEY
       ? { secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET, captureMode: "hold" }
       : undefined,
-    x402: x402PayTo ? { payTo: x402PayTo, network: x402Network } : undefined,
+    x402: x402PayTo ? { payTo: x402PayTo, network: x402Network, facilitatorUrl: x402Facilitator } : undefined,
     mpp:
       env.STRIPE_SECRET_KEY && env.MPP_NETWORK_ID && env.MPP_CHALLENGE_SECRET
         ? { stripeSecretKey: env.STRIPE_SECRET_KEY, networkId: env.MPP_NETWORK_ID, challengeSecret: env.MPP_CHALLENGE_SECRET }
@@ -101,15 +103,18 @@ const collect = createCollect({
   exposeEmailPreview: true,
 });
 
-// A real agent wallet that pays demo orders over x402 on Base Sepolia, so the demo settles on-chain.
+// A real agent wallet that pays demo orders over x402, so the demo settles on-chain.
 const demoAgent =
   demoAgentKey && x402PayTo
     ? createDemoAgent({
         agentKey: demoAgentKey,
+        network: x402Network,
         cafeKey: demoCafeKey,
         baseUrl,
         fetch: (req) => collect.app.fetch(req),
+        facilitatorUrl: x402Facilitator,
         dailyLimit: Number(env.DEMO_AGENT_DAILY_LIMIT) || undefined,
+        maxOrderUsd: Number(env.DEMO_AGENT_MAX_ORDER) || undefined,
       })
     : null;
 
@@ -212,10 +217,10 @@ const mcp = createMcpHandler({
   payer:
     demoAgent && demoAgentKey
       ? {
-          ...walletPayer({ privateKey: demoAgentKey, networks: [DEMO_NETWORK] }),
+          ...walletPayer({ privateKey: demoAgentKey, networks: [x402Network] }),
           pay: async (order) => {
             const paid = await demoAgent.pay(order.id);
-            return paid.ok ? { ...paid, network: DEMO_NETWORK } : { ok: false, error: paid.error };
+            return paid.ok ? { ...paid, network: x402Network } : { ok: false, error: paid.error };
           },
         }
       : undefined,
@@ -268,6 +273,6 @@ function withPublicOrigin(req: Request): Request {
 serve({ fetch: (req) => app.fetch(withPublicOrigin(req)), port }, () => {
   const rails = [env.STRIPE_SECRET_KEY && "card (Stripe)", x402PayTo && "x402", "test"].filter(Boolean).join(", ");
   console.log(`agentPickup demo on ${baseUrl}  · payments: ${rails} · mail: ${env.RESEND_API_KEY ? "Resend" : "preview only"}`);
-  if (demoAgent) console.log(`demo agent ${demoAgent.address} pays ${demoAgent.cafeAddress ?? x402PayTo} on ${DEMO_NETWORK}`);
+  if (demoAgent) console.log(`demo agent ${demoAgent.address} pays ${demoAgent.cafeAddress ?? x402PayTo} on ${x402Network}`);
   void demoAgent?.refill();
 });

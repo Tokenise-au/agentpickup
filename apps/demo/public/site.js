@@ -166,8 +166,8 @@ await pay("${esc(data.next.url)}", { method: "POST" });
         demoAgent?.enabled
           ? `<button class="btn btn-lime" id="agentPay">Have our demo agent pay it</button>
              <p class="muted small" style="margin-top:8px">A real wallet (<a href="${esc(demoAgent.explorer)}" target="_blank" rel="noopener">${esc(short(demoAgent.address))}</a>${
-               demoAgent.balance ? `, ${esc(demoAgent.balance)} test USDC` : ""
-             }) pays in Base Sepolia test USDC, settled on-chain by the x402.org facilitator.</p>
+               demoAgent.balance ? `, ${esc(demoAgent.balance)} ${esc(demoAgent.money)}` : ""
+             }) pays in ${esc(demoAgent.money)} on ${esc(demoAgent.networkName)}, settled on-chain through ${esc(demoAgent.facilitator)}. Up to $${esc(demoAgent.maxOrder)} an order.</p>
              <p id="agentPayResult" class="mono small"></p>`
           : `<p class="muted small">This page has no wallet, so the demo stops here. Use the instant test payment to see the rest.</p>`
       }`;
@@ -189,7 +189,7 @@ await pay("${esc(data.next.url)}", { method: "POST" });
     }
     button.remove();
     out.className = "mono small ok";
-    out.innerHTML = `✓ paid ${esc(data.amount)} USDC · <a href="${esc(data.explorer)}" target="_blank" rel="noopener">tx ${esc(short(data.transaction))}</a> on Base Sepolia`;
+    out.innerHTML = `✓ paid ${esc(data.amount)} USDC · <a href="${esc(data.explorer)}" target="_blank" rel="noopener">tx ${esc(short(data.transaction))}</a> on ${esc(demoAgent.networkName)}`;
     startFlow(id, { scroll: true });
   }
 

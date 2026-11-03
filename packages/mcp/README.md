@@ -16,7 +16,7 @@ collect.
 
 ## Use it
 
-Try it against the hosted demo shop first. It pays with the demo's own wallet in Base Sepolia test USDC:
+Try it against the hosted demo shop first. It pays with the demo's own small wallet, within the demo's caps:
 
 ```json
 { "mcpServers": { "agentpickup": { "type": "http", "url": "https://web-production-3cfc1.up.railway.app/mcp" } } }

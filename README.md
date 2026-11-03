@@ -26,13 +26,13 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 |---|---|
 | `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) | Card checkout. Holds the card, captures on scan. Use `sk_test_` keys. Also the SPT handler for UCP. |
 | `STRIPE_PROFILE_ID` | The Stripe profile id advertised to UCP platforms. |
-| `X402_PAY_TO`, `X402_NETWORK` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC), where the demo café wallet takes the payments; on any other network (`eip155:8453` is Base mainnet) they go to `X402_PAY_TO` and the demo wallets switch off. Mainnet also needs a mainnet facilitator. |
+| `X402_PAY_TO`, `X402_NETWORK`, `X402_FACILITATOR_URL` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC, x402.org facilitator), where the demo café wallet takes the payments. `eip155:8453` is Base mainnet (real USDC, PayAI's keyless facilitator by default), where payments go only to `X402_PAY_TO`. |
 | `MPP_NETWORK_ID`, `MPP_CHALLENGE_SECRET` | MPP agent payments by card or Link into your Stripe (needs Stripe's MPP access). |
 | `RESEND_API_KEY`, `MAIL_FROM` | Real email delivery, QR embedded as an inline image. |
 | `STAFF_KEY` | Locks the scanner. Without it the demo runs with `allowOpenStaff`. |
 | `ADMIN_KEY` | Read waitlist signups at `/admin/waitlist?key=…`. |
 | `SIGNING_KEY_PEM`, `AP2_SIGNING_KEY_PEM` | Pass signing (Ed25519) and AP2 merchant signatures (ES256). Generated into `data/` if unset. |
-| `DEMO_AGENT_KEY`, `DEMO_CAFE_KEY` | The demo's Base Sepolia wallets. The agent pays demo orders over x402 for real (the button on the page and the hosted `/mcp`); the café is the payTo and hands test USDC back when the agent runs low. Testnet keys only. |
+| `DEMO_AGENT_KEY`, `DEMO_CAFE_KEY`, `DEMO_AGENT_MAX_ORDER`, `DEMO_AGENT_DAILY_LIMIT` | The demo's own wallets. The agent pays demo orders over x402 for real (the button on the page and the hosted `/mcp`): up to $20 an order and 60 a day on testnet, $10 and 20 on mainnet. On testnet the café is the payTo and hands test USDC back when the agent runs low; on mainnet the café key is ignored, the agent pays `X402_PAY_TO`, and you top it up. Keep only a small balance in the agent: its key sits in server config. |
 
 ## Agent payment standards
 
@@ -52,7 +52,7 @@ real goods need that raised.
 
 `@agentpickup/mcp` lets any MCP client order from an agentPickup shop: `get_shop`, `create_pickup_order`,
 `pay_order` (x402 from a wallet you configure, with a spend cap), `order_status` and `get_pickup_pass`
-(Sign-In-With-X). The demo hosts it at `/mcp`, paying with its testnet wallet:
+(Sign-In-With-X). The demo hosts it at `/mcp`, paying with the demo agent's wallet:
 
 ```json
 { "mcpServers": { "agentpickup": { "type": "http", "url": "https://web-production-3cfc1.up.railway.app/mcp" } } }
