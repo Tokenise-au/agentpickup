@@ -88,7 +88,8 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [x] `fxToUsdCents`: ECB rates through Frankfurter, so AUD venues can take USDC
 - [x] Dave: sandbox redirect URL and app keys (2026-11-03); app-level webhook `wbhk_d429…` registered at /connect/square/webhook
 - [x] Checked live on the sandbox: sign-up, agent order through the MCP, order in Square, ready in Square, QR email in ~1 s
-- [ ] Production Square app: redirect URL, keys, `SQUARE_ENVIRONMENT=production`, its own webhook subscription (before Phase 3). In progress 2026-11-04: Dave, with a one-page guide
+- [x] Production Square app (2026-11-04): redirect URL, production keys in Railway, `SQUARE_ENVIRONMENT=production`, its own webhook subscription. /connect now signs in at connect.squareup.com. Still to prove: one real sign-in end to end (Dave's own Square account)
+- [ ] Test-mode orders in a production Square account are recorded as paid sales (an OTHER payment), so they'd show in a café's sales reports and GST. Send them at $0 with a "test order, no money moved" label instead, checked in the sandbox first. Before any real café uses test mode
 - [ ] Repeat the agent's USDC payment on a wizard venue once a wallet has Base Sepolia test USDC
 - Size: about 4-6 hours, built and tested on the Square sandbox first
 
@@ -128,7 +129,7 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 
 The product is ahead of demand, so these come before more features. Order of play:
 
-- [ ] Production Square app, so real cafés can sign up (Dave; see the Phase 1 list above)
+- [x] Production Square app, so real cafés can sign up (2026-11-04; one real sign-in still to try)
 - [ ] Publish core 0.3.0, server 0.8.0, mcp 0.3.0, then the MCP Registry 0.3.0, before any outreach goes out (Dave)
 - [ ] Coinbase Agentic Wallet test: Dave signs in, adds about $2 of USDC on Base, and asks Claude to buy a $0.50 babyccino at the Demo Café (the first end-to-end run with a real person's wallet)
 - [ ] A short demo video: Claude, a Coinbase wallet and agentPickup buying a coffee and collecting it (after the wallet test)
