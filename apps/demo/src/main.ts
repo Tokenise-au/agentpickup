@@ -9,7 +9,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateSigningKeyPem, newId } from "@agentpickup/core";
 import { createMcpHandler, walletPayer } from "@agentpickup/mcp";
-import { cappedMailer, cloudflareMailer, createCollect, createVenueHost, outboxMailer, resendMailer, SqliteStore } from "@agentpickup/server";
+import {
+  cappedMailer,
+  cloudflareMailer,
+  createCollect,
+  createVenueHost,
+  fxToUsdCents,
+  outboxMailer,
+  resendMailer,
+  SqliteStore,
+  type SignupConfig,
+} from "@agentpickup/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { createDemoAgent, DEMO_NETWORKS, TESTNET } from "./demo-agent.js";
 
@@ -174,6 +184,10 @@ app.use("/mcp", limit(60));
 app.use("/v/*", limit(60));
 app.use("/host/*", limit(30));
 app.use("/directory/*", limit(60));
+// Square's webhook comes from a few Square servers for every venue, so it isn't limited per address.
+const connectLimit = limit(30);
+app.use("/connect/*", (c, next) => (c.req.path === "/connect/square/webhook" ? next() : connectLimit(c, next)));
+app.use("/seller/*", limit(30));
 app.use(
   "/mcp",
   cors({
@@ -237,6 +251,23 @@ app.post("/api/demo/agent-pay", async (c) => {
   }
 });
 
+// Sellers connect their own Square at /connect when the Square app's keys are set. A sandbox Square app
+// pairs with test USDC on Base Sepolia; a production one with the demo's own network.
+const squareEnvironment = env.SQUARE_ENVIRONMENT === "production" ? "production" : "sandbox";
+const signupNetwork = squareEnvironment === "production" ? x402Network : TESTNET;
+const signup: SignupConfig | undefined =
+  env.SQUARE_APP_ID && env.SQUARE_APP_SECRET
+    ? {
+        square: {
+          applicationId: env.SQUARE_APP_ID,
+          applicationSecret: env.SQUARE_APP_SECRET,
+          environment: squareEnvironment,
+          webhookSignatureKey: env.SQUARE_APP_WEBHOOK_KEY || undefined,
+        },
+        x402: { network: signupNetwork, facilitatorUrl: signupNetwork === x402Network ? x402Facilitator : DEMO_NETWORKS[TESTNET].facilitator },
+      }
+    : undefined;
+
 // More venues on the same install, at /v/<slug>, managed through /host/v1. Off unless both keys are set.
 const venueHost =
   env.VENUE_SECRET && env.VENUE_ADMIN_KEY
@@ -253,9 +284,14 @@ const venueHost =
         allowOpenStaff: true,
         // The Demo Café is in the directory too.
         alsoList: [collect],
+        signup,
+        // Australian venues price in AUD; USDC is US dollars.
+        toUsdCents: fxToUsdCents(),
       })
     : null;
 if (venueHost) app.route("/", venueHost.app);
+// Until sign-up is switched on, "Integrate it" goes to the partner form.
+if (!venueHost || !signup) app.get("/connect", (c) => c.redirect("/#partners"));
 
 // The agentPickup MCP server, hosted for the demo shop. The demo agent's wallet pays, under the
 // same daily cap as the button on the page; the same wallet signs in to fetch passes again.

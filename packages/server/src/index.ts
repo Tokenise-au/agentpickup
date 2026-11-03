@@ -59,6 +59,16 @@ export { PostgresStore, type PostgresStoreOptions, type Queryable } from "./post
 export { parseCatalog, type ConnectConfig } from "./connect.js";
 export type { ConnectorContext, PickupConnector, ShopProfile } from "./connectors/types.js";
 export { profileFromSquare, squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
+export {
+  SQUARE_SCOPES,
+  squareOAuth,
+  type SquareLocationSummary,
+  type SquareOAuth,
+  type SquareOAuthConfig,
+  type SquareTokens,
+} from "./connectors/square-oauth.js";
+export type { SellerVenue, SignupConfig } from "./signup.js";
+export { fxToUsdCents, type FxOptions } from "./fx.js";
 export { createVenueHost, type VenueHostConfig, type VenueInput } from "./venues.js";
 export {
   distanceKm,

@@ -3,7 +3,7 @@
 // (card, Square and staff keys, the refund wallet, the pass-signing key) are sealed with AES-256-GCM
 // before they reach the store, so the database never holds them in the clear. Listed venues appear in the
 // public directory at /directory/v1/shops, where agents find shops near someone that sell what they want.
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
@@ -13,8 +13,10 @@ import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 import { parseCatalog } from "./connect.js";
 import { squareConnector } from "./connectors/square.js";
+import { squareOAuth, type SquareLocationSummary, type SquareTokens } from "./connectors/square-oauth.js";
 import { createCollect } from "./index.js";
 import { searchDirectory, type DirectoryQuery, type ShopListing } from "./directory.js";
+import { mountSignup, type SellerVenue, type SignupConfig } from "./signup.js";
 
 /** What a platform sends to create or change a venue. Secret fields are write-only. */
 export interface VenueInput {
@@ -33,7 +35,21 @@ export interface VenueInput {
     x402?: { payTo: string; network?: `${string}:${string}`; facilitatorUrl?: string; refundPrivateKey?: string | null };
     card?: { secretKey?: string | null; webhookSecret?: string | null; captureMode?: "hold" | "charge" } | null;
   };
-  square?: { accessToken?: string | null; locationId: string; environment?: "sandbox" | "production"; webhookSignatureKey?: string | null } | null;
+  square?: {
+    accessToken?: string | null;
+    /** From Sign in with Square: renews the access token before it expires. */
+    refreshToken?: string | null;
+    locationId: string;
+    environment?: "sandbox" | "production";
+    webhookSignatureKey?: string | null;
+    merchantId?: string;
+    /** When the access token expires (unix ms), for venues connected through Sign in with Square. */
+    tokenExpiresAt?: number;
+    /** Set when the seller disconnected agentPickup in Square; the venue keeps its last menu. */
+    revokedAt?: number;
+  } | null;
+  /** The Square seller who connected the venue, so they can manage it at /seller. */
+  owner?: { squareMerchantId?: string };
   staffKey?: string | null;
   webhook?: { url: string; secret?: string | null } | null;
 }
@@ -46,6 +62,7 @@ interface VenueSecrets {
   cardWebhookSecret?: string;
   x402RefundKey?: string;
   squareAccessToken?: string;
+  squareRefreshToken?: string;
   squareWebhookKey?: string;
   webhookSecret?: string;
 }
@@ -55,7 +72,7 @@ interface VenueRecord {
   slug: string;
   settings: Omit<VenueInput, "staffKey"> & {
     payments?: { test?: boolean; x402?: { payTo: string; network?: `${string}:${string}`; facilitatorUrl?: string }; card?: { captureMode?: "hold" | "charge" } };
-    square?: { locationId: string; environment?: "sandbox" | "production" };
+    square?: { locationId: string; environment?: "sandbox" | "production"; merchantId?: string; tokenExpiresAt?: number; revokedAt?: number };
     webhook?: { url: string };
   };
   sealed: string;
@@ -90,10 +107,38 @@ export interface VenueHostConfig {
   sendFrom?: string;
   /** Other shops to show in the directory alongside the venues, such as the install's own shop. */
   alsoList?: { listing(): Promise<ShopListing> }[];
+  /** Sellers sign themselves up at /connect with Sign in with Square, and manage their venues at /seller. */
+  signup?: SignupConfig;
+  /**
+   * Prices venues in other currencies in US dollars for USDC payments, e.g. fxToUsdCents(). Without it, only
+   * venues pricing in USD can take x402.
+   */
+  toUsdCents?: (cents: number, currency: string) => number | Promise<number>;
 }
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const RESERVED = new Set(["host", "api", "admin", "connect", "static", "assets", "www", "app"]);
+const DAY = 24 * 3600_000;
+
+/** "Corner Café" -> "corner-cafe". */
+function slugify(name: string): string {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return slug || "venue";
+}
+
+/** A staff key people can read out and type: "QX7M-4KPA-9TRD". */
+function newStaffKey(): string {
+  const letters = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const group = () => Array.from({ length: 4 }, () => letters[randomInt(letters.length)]).join("");
+  return `${group()}-${group()}-${group()}`;
+}
 
 function sealer(secret: string) {
   if (secret.length < 32) throw new Error("The venue host's secretKey must be at least 32 characters.");
@@ -155,6 +200,7 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
   take("cardWebhookSecret", v.payments?.card === null ? null : v.payments?.card?.webhookSecret);
   take("x402RefundKey", v.payments?.x402?.refundPrivateKey);
   take("squareAccessToken", v.square === null ? null : v.square?.accessToken);
+  take("squareRefreshToken", v.square === null ? null : v.square?.refreshToken);
   take("squareWebhookKey", v.square === null ? null : v.square?.webhookSignatureKey);
   take("webhookSecret", v.webhook === null ? null : v.webhook?.secret);
 
@@ -172,7 +218,18 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
       ...(v.payments?.x402 ? { x402: { payTo: v.payments.x402.payTo, network: v.payments.x402.network, facilitatorUrl: v.payments.x402.facilitatorUrl } } : {}),
       ...(v.payments?.card ? { card: { captureMode: v.payments.card.captureMode } } : {}),
     },
-    ...(v.square ? { square: { locationId: v.square.locationId, environment: v.square.environment } } : {}),
+    ...(v.square
+      ? {
+          square: {
+            locationId: v.square.locationId,
+            environment: v.square.environment,
+            ...(typeof v.square.merchantId === "string" ? { merchantId: v.square.merchantId } : {}),
+            ...(Number.isFinite(v.square.tokenExpiresAt) ? { tokenExpiresAt: v.square.tokenExpiresAt } : {}),
+            ...(Number.isFinite(v.square.revokedAt) ? { revokedAt: v.square.revokedAt } : {}),
+          },
+        }
+      : {}),
+    ...(typeof v.owner?.squareMerchantId === "string" ? { owner: { squareMerchantId: v.owner.squareMerchantId } } : {}),
     ...(v.webhook ? { webhook: { url: v.webhook.url } } : {}),
   };
   return { settings, secrets };
@@ -234,6 +291,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
                 payTo: x402.payTo,
                 network: x402.network,
                 facilitatorUrl: x402.facilitatorUrl,
+                ...(cfg.toUsdCents ? { toUsdCents: cfg.toUsdCents } : {}),
                 ...(secrets.x402RefundKey ? { refunds: { privateKey: secrets.x402RefundKey as `0x${string}` } } : {}),
               },
             }
@@ -311,6 +369,27 @@ export function createVenueHost(cfg: VenueHostConfig) {
     return true;
   }
 
+  /** What the seller page shows a seller about one of their venues. */
+  function sellerView(record: VenueRecord): SellerVenue {
+    const s = record.settings;
+    const url = `${base}${prefix}/${record.slug}`;
+    return {
+      slug: record.slug,
+      name: s.merchant.name,
+      currency: s.currency ?? "usd",
+      url,
+      staffUrl: `${url}/staff`,
+      running: live.has(record.slug),
+      squareLocationId: s.square?.locationId ?? null,
+      squareConnected: Boolean(s.square && !s.square.revokedAt),
+      brandColor: s.merchant.brandColor ?? null,
+      wallet: s.payments?.x402?.payTo ?? null,
+      test: Boolean(s.payments?.test),
+      listed: s.listed !== false,
+      settings: s as VenueInput,
+    };
+  }
+
   /** A venue as the admin API shows it: settings, where it lives, which secrets are set (never their values). */
   function describe(record: VenueRecord) {
     let secrets: VenueSecrets | null = null;
@@ -333,6 +412,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
             card: Boolean(secrets.cardSecretKey),
             x402Refunds: Boolean(secrets.x402RefundKey),
             square: Boolean(secrets.squareAccessToken),
+            squareRenewal: Boolean(secrets.squareRefreshToken),
             squareWebhook: Boolean(secrets.squareWebhookKey),
             webhook: Boolean(secrets.webhookSecret),
           }
@@ -341,6 +421,112 @@ export function createVenueHost(cfg: VenueHostConfig) {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };
+  }
+
+  // ---------- Sign in with Square ----------
+  const square = cfg.signup ? squareOAuth({ ...cfg.signup.square, fetch: cfg.signup.square.fetch ?? cfg.fetch }) : null;
+
+  /** Change a venue's settings, and any secrets the change names, without restating the rest. */
+  async function patchVenue(slug: string, change: (settings: VenueRecord["settings"]) => VenueInput) {
+    const record = await recordOf(slug);
+    if (!record || (record as VenueRecord & { removedAt?: number }).removedAt) throw new VenueError("No such venue.");
+    return upsertVenue(slug, change(structuredClone(record.settings)));
+  }
+
+  async function venuesOwnedBy(merchantId: string): Promise<VenueRecord[]> {
+    const owned: VenueRecord[] = [];
+    for (const slug of await index()) {
+      const record = await recordOf(slug);
+      if (record?.settings.owner?.squareMerchantId === merchantId) owned.push(record);
+    }
+    return owned;
+  }
+
+  /** Give every venue a seller owns their newest Square tokens (after signing in again, or a renewal). */
+  async function useSquareTokens(tokens: SquareTokens) {
+    for (const record of await venuesOwnedBy(tokens.merchantId)) {
+      await patchVenue(record.slug, (s) => ({
+        ...s,
+        ...(s.square
+          ? { square: { ...s.square, accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, tokenExpiresAt: tokens.expiresAt, revokedAt: undefined } }
+          : {}),
+      }));
+    }
+  }
+
+  /**
+   * Square access tokens last 30 days and Square asks for renewal at least weekly: renew each seller's once it's
+   * a week old. Runs hourly; one renewal covers all of a seller's venues.
+   */
+  async function renewSquareTokens(now = Date.now()) {
+    if (!square) return [];
+    const due = new Map<string, string>();
+    for (const slug of await index()) {
+      const sq = (await recordOf(slug))?.settings.square;
+      if (!sq?.merchantId || sq.revokedAt || !sq.tokenExpiresAt || sq.tokenExpiresAt - now > 23 * DAY) continue;
+      if (!due.has(sq.merchantId)) due.set(sq.merchantId, slug);
+    }
+    const renewed: string[] = [];
+    for (const [merchantId, slug] of due) {
+      try {
+        const refreshToken = box.open<VenueSecrets>((await recordOf(slug))!.sealed).squareRefreshToken;
+        if (!refreshToken) continue;
+        await useSquareTokens(await square.refresh(refreshToken));
+        renewed.push(merchantId);
+      } catch (err) {
+        console.error(`[venues] renewing Square access for ${slug} failed:`, err);
+      }
+    }
+    return renewed;
+  }
+
+  /** The seller disconnected agentPickup in Square: stop using their tokens. Each venue keeps its last menu. */
+  async function squareRevoked(merchantId: string) {
+    for (const record of await venuesOwnedBy(merchantId)) {
+      await patchVenue(record.slug, (s) => ({
+        ...s,
+        ...(s.square ? { square: { ...s.square, accessToken: null, refreshToken: null, revokedAt: Date.now() } } : {}),
+      }));
+    }
+  }
+
+  /** A new venue for one of the seller's Square locations: menu and profile come from Square; test payments until they add a wallet. */
+  async function createSquareVenue(tokens: SquareTokens, location: SquareLocationSummary) {
+    const name = (location.businessName || location.name).trim().slice(0, 80) || "My venue";
+    const stem = slugify(name);
+    let slug = stem;
+    for (let i = 2; RESERVED.has(slug) || (await recordOf(slug)); i++) slug = `${stem.slice(0, 36)}-${i}`;
+    const staffKey = newStaffKey();
+    await upsertVenue(slug, {
+      merchant: { name, fromEmail: cfg.sendFrom ?? `orders@${new URL(base).hostname}` },
+      currency: location.currency,
+      payments: { test: true },
+      square: {
+        locationId: location.id,
+        environment: square!.environment,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        merchantId: tokens.merchantId,
+        tokenExpiresAt: tokens.expiresAt,
+        // Signs the events the host passes on from Square's one webhook, so the QR waits for "ready".
+        webhookSignatureKey: randomBytes(24).toString("base64url"),
+      },
+      owner: { squareMerchantId: tokens.merchantId },
+      staffKey,
+    } satisfies VenueInput);
+    return { slug, staffKey };
+  }
+
+  async function resetStaffKey(slug: string) {
+    const staffKey = newStaffKey();
+    await patchVenue(slug, (s) => ({ ...s, staffKey }));
+    return staffKey;
+  }
+
+  /** "Tell me when you support my system" from the signup page. */
+  async function saveRequest(request: { system: string; email: string }) {
+    const list = (await cfg.store.getDoc<{ requests: unknown[] }>("signup", "requests"))?.requests ?? [];
+    await cfg.store.putDoc("signup", "requests", { requests: [...list.slice(-499), { ...request, at: Date.now() }] });
   }
 
   const app = new Hono();
@@ -373,7 +559,73 @@ export function createVenueHost(cfg: VenueHostConfig) {
     await ready;
     return (await removeVenue(c.req.param("slug"))) ? c.json({ ok: true }) : c.json({ error: "No such venue." }, 404);
   });
+  admin.get("/requests", async (c) => c.json({ requests: (await cfg.store.getDoc<{ requests: unknown[] }>("signup", "requests"))?.requests ?? [] }));
   app.route("/host/v1", admin);
+
+  // ---------- Square's one webhook for every venue ----------
+  if (square && cfg.signup?.square.webhookSignatureKey) {
+    const appKey = cfg.signup.square.webhookSignatureKey;
+    const hookUrl = cfg.signup.square.webhookUrl ?? `${base}/connect/square/webhook`;
+    app.post("/connect/square/webhook", async (c) => {
+      const raw = await c.req.text();
+      const expected = Buffer.from(createHmac("sha256", appKey).update(hookUrl + raw).digest("base64"));
+      const given = Buffer.from(c.req.header("x-square-hmacsha256-signature") ?? "");
+      if (expected.length !== given.length || !timingSafeEqual(expected, given)) return c.json({ error: "Signature doesn't match." }, 401);
+      const event = JSON.parse(raw) as {
+        type?: string;
+        merchant_id?: string;
+        data?: { object?: { order_fulfillment_updated?: { location_id?: string } } };
+      };
+      await ready;
+      if (event.type === "oauth.authorization.revoked" && event.merchant_id) {
+        await squareRevoked(event.merchant_id);
+        return c.json({ ok: true });
+      }
+      const locationId = event.data?.object?.order_fulfillment_updated?.location_id;
+      if (!locationId) return c.json({ ok: true });
+      for (const slug of await index()) {
+        const venue = live.get(slug);
+        const record = venue ? await recordOf(slug) : null;
+        const sq = record?.settings.square;
+        if (!venue || !record || sq?.locationId !== locationId) continue;
+        if (event.merchant_id && sq.merchantId && sq.merchantId !== event.merchant_id) continue;
+        const venueKey = box.open<VenueSecrets>(record.sealed).squareWebhookKey;
+        if (!venueKey) continue;
+        // Hand the event to the venue's own Square connector, signed with that venue's key.
+        const venueUrl = `${base}${prefix}/${slug}/connect/square/webhook`;
+        const signature = createHmac("sha256", venueKey).update(venueUrl + raw).digest("base64");
+        await venue.app.fetch(
+          new Request(venueUrl, { method: "POST", headers: { "Content-Type": "application/json", "x-square-hmacsha256-signature": signature }, body: raw }),
+        );
+      }
+      return c.json({ ok: true });
+    });
+  }
+
+  // ---------- sellers sign themselves up ----------
+  if (square && cfg.signup) {
+    mountSignup(app, {
+      base,
+      prefix,
+      config: cfg.signup,
+      square,
+      store: cfg.store,
+      secretKey: cfg.secretKey,
+      convertsCurrency: Boolean(cfg.toUsdCents),
+      seal: (value) => box.seal(value),
+      open: (sealed) => box.open(sealed),
+      ready,
+      venuesOwnedBy: async (merchantId) => (await venuesOwnedBy(merchantId)).map((r) => sellerView(r)),
+      createSquareVenue,
+      useSquareTokens,
+      patchVenue: async (slug, change) => {
+        await patchVenue(slug, change);
+      },
+      resetStaffKey,
+      removeVenue,
+      saveRequest,
+    });
+  }
 
   // ---------- the public directory ----------
   /** Every listed venue (and alsoList shop) that's running. */
@@ -416,6 +668,9 @@ export function createVenueHost(cfg: VenueHostConfig) {
   app.all(`${prefix}/:slug`, (c) => toVenue(c));
   app.all(`${prefix}/:slug/*`, (c) => toVenue(c));
 
+  const renewTimer = square ? setInterval(() => void renewSquareTokens(), 3600_000) : null;
+  renewTimer?.unref();
+
   return {
     app,
     ready,
@@ -423,9 +678,12 @@ export function createVenueHost(cfg: VenueHostConfig) {
     removeVenue,
     /** The directory's shops, before any search. */
     listings,
+    /** Renew Square access for sellers whose token is a week old. Runs hourly by itself. */
+    renewSquareTokens,
     /** The running shop for a venue, for jobs that need it (sweeps run on their own). */
     venue: (slug: string) => live.get(slug) ?? null,
     stop() {
+      if (renewTimer) clearInterval(renewTimer);
       for (const v of live.values()) v.stop();
     },
   };
