@@ -15,7 +15,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # 77 tests: passes, order flow, every protocol, hardening, the MCP server
+npm test           # 165 tests: every path on SQLite, and again on Postgres (in-process PGlite)
 npm run typecheck
 ```
 
@@ -88,6 +88,37 @@ const pickup = createCollect({
 app.route("/", pickup.app); // any Hono app; pickup.app.fetch works anywhere
 ```
 
+### Storage
+
+`SqliteStore` is a single file, fine for one server. For more than one server, or your database's own
+backups, use `PostgresStore` with anything that has a pg-style `query(text, params)`: a `pg` Pool, Neon or
+Supabase. Tables are created on first use, prefixed `pickup_` (set `prefix` to share a database between
+shops). Hand-overs stay atomic across servers: one `UPDATE … WHERE status IN (…) RETURNING *`.
+
+```ts
+import pg from "pg";
+import { PostgresStore } from "@agentpickup/server";
+
+const store = new PostgresStore(new pg.Pool({ connectionString: process.env.DATABASE_URL }));
+```
+
+Your own store can implement the `Store` interface; its methods may return values or promises.
+
+### Shops priced in other currencies
+
+x402 settles in USDC. A shop with `currency: "aud"` passes `payments.x402.toUsdCents(amountCents, currency)`,
+backed by whatever rate source it trusts. It runs once when an x402 order is created, and the USD price is
+fixed on the order (`usdCents`), so the 402 quote, the payment check and any refund all agree. Without it,
+`createCollect` refuses to turn x402 on rather than charge the wrong amount.
+
+### x402 refunds
+
+Set `payments.x402.refunds: { privateKey }` (a wallet holding USDC: `payTo` itself or a separate float) and
+uncollected x402 orders are paid back to the wallet that paid them, through the facilitator, which pays the
+gas. A failed refund is tried again on each sweep, and `collect.refundX402(orderId)` runs one by hand. The
+EIP-3009 nonce is derived from the order id, so the USDC contract itself refuses a second refund of the same
+order. The key sits in your server config: keep only what refunds need in that wallet.
+
 Behind a TLS proxy (Railway, Fly, a load balancer) requests reach your server as `http://`. Rewrite
 them to your public origin before `pickup.app.fetch` (see `withPublicOrigin` in `apps/demo/src/main.ts`)
 so the URLs it reports, such as the resource in an x402 quote, match what clients called.
@@ -117,7 +148,8 @@ so the URLs it reports, such as the resource in an x402 quote, match what client
   and released if nobody collects in time (`noShowPolicy: "keep"` captures it instead). Card holds
   lapse after about 7 days, so use `captureMode: "charge"` for longer pickup windows.
 - **Agent payments** (x402, MPP, UCP, ACP) are charged at order time. Uncollected MPP, UCP and ACP card
-  orders are refunded through Stripe; x402 orders are flagged `refundDue`. x402's `auth-capture` scheme
+  orders are refunded through Stripe; x402 orders are paid back from a refund wallet when one is set,
+  and flagged `refundDue` otherwise. x402's `auth-capture` scheme
   (hold, then capture on scan) is the planned upgrade, but the public facilitator doesn't support it on
   Base Sepolia yet (checked 2026-11-03).
 - **Hardening**: staff routes fail closed without a key, failed lookups are throttled per client,
@@ -148,7 +180,8 @@ See [TODO.md](TODO.md) for what's built and what's next.
 ## Not done yet
 
 - Stripe, MPP, UCP/ACP SPT payments and Resend are tested against fakes, not real test keys. x402 is
-  tested end to end with a fake facilitator and verified live up to the 402 challenge.
+  tested end to end with a fake facilitator, has settled a real order on Base mainnet, and its refund
+  authorization passes PayAI's verification.
 - Not built yet: Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes,
   offline scanning, Shopify/Square adapters, UCP request signatures and cart/catalog endpoints, and the AP2
   payment mandate (the PSP's job).

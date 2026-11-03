@@ -28,6 +28,10 @@ const pickup = createCollect({
 // pickup.app is a Hono app: mount it, or call pickup.app.fetch from any runtime with Request/Response.
 ```
 
+Storage is `SqliteStore` (one file) or `PostgresStore` (any pg-style client: `pg`, Neon, Supabase), or
+your own `Store`. Shops priced in other currencies take x402 through `payments.x402.toUsdCents`, and
+`payments.x402.refunds` pays USDC no-shows back through the facilitator.
+
 Node 22.13 or later (uses `node:sqlite`). Full configuration, routes and protocol notes:
 [github.com/dav3trad3r/agentpickup](https://github.com/dav3trad3r/agentpickup).
 
