@@ -17,7 +17,8 @@ where sellers look.
   venue shows the Square flow end to end (menu in, order on Square's screens, "ready" from Square, scan to
   collect). Square sellers sign themselves up at [agentpickup.app/connect](https://agentpickup.app/connect)
   (Square sandbox for now).
-- On npm: `@agentpickup/core` 0.2.0, `@agentpickup/server` 0.6.1 (0.7.0 with sign-up built) and `@agentpickup/mcp` 0.2.0.
+- On npm: `@agentpickup/core` 0.2.0, `@agentpickup/server` 0.7.0 (sign-up) and `@agentpickup/mcp` 0.2.0. Group orders are built
+  as core 0.3.0, server 0.8.0 and MCP 0.3.0.
 - In the official MCP Registry (0.2.0). Agents can find shops through the directory and `find_shops`.
 - Usable today by developers who self-host the library, and by Square sellers through /connect once it uses a
   production Square app. Not in the Square App Marketplace yet.
