@@ -19,6 +19,7 @@ await import("./acp.test.js");
 await import("./ap2.test.js");
 await import("./agent-signatures.test.js");
 await import("./currency.test.js");
+await import("./refunds.test.js");
 after(() => closeTestDb());
 
 const order = (id: string): Order => ({

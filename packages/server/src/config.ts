@@ -60,6 +60,13 @@ export interface X402RailConfig {
    * the quote and the payment always agree. Required when `currency` isn't "usd".
    */
   toUsdCents?: (amountCents: number, currency: string) => number | Promise<number>;
+  /**
+   * Pay no-shows back automatically. A wallet holding USDC (payTo itself, or a separate float) signs a
+   * transfer to the wallet that paid, and the facilitator settles it and pays the gas. Its key sits in your
+   * server config, so keep only what refunds need in it. Without this, uncollected x402 orders are flagged
+   * refundDue for you to settle by hand.
+   */
+  refunds?: { privateKey: `0x${string}` };
 }
 
 export interface CollectConfig {

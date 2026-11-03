@@ -61,7 +61,8 @@
     "jsqr": "^1.4.0",
     "mppx": "^0.17.0",
     "qrcode": "^1.5.4",
-    "stripe": "^23.1.0"
+    "stripe": "^23.1.0",
+    "viem": "^2.57.14"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.10"

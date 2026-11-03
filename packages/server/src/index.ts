@@ -23,7 +23,7 @@ import { renderPassEmail } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
 import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
 import { stripeCardRail } from "./rails/stripe.js";
-import { X402_PAY_ROUTE, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
+import { X402_PAY_ROUTE, createX402Refunder, paymentIdFromRequest, readSettlement, receiptFrom, x402PayMiddleware } from "./rails/x402.js";
 import { createSiwxGate } from "./siwx.js";
 import { challengeIdOf, createMppRail, MPP_PAY_ROUTE } from "./rails/mpp.js";
 import { sptClient } from "./rails/spt.js";
@@ -101,6 +101,7 @@ export function createCollect(config: CollectConfig) {
       `x402 settles in USDC. A shop pricing in ${currency.toUpperCase()} needs payments.x402.toUsdCents to convert its prices, or leave x402 off.`,
     );
   }
+  const x402Refunder = x402 ? createX402Refunder(x402, base) : null;
   const catalog = new Map(config.catalog.map((item) => [item.id, item]));
 
   const staffToken = config.staffKey
@@ -373,8 +374,9 @@ export function createCollect(config: CollectConfig) {
             outcome = await card.release(o.paymentRef);
           }
         } else if (o.rail === "x402") {
+          // Paid back below, with the retries, when a refund wallet is set up.
           refundDue = config.noShowPolicy !== "keep";
-          outcome = refundDue ? "refund_due" : "kept";
+          outcome = refundDue ? (x402Refunder ? "refunding" : "refund_due") : "kept";
         } else if ((o.rail === "ucp" || o.rail === "acp") && o.paymentRef?.startsWith("pi_")) {
           const client = o.rail === "ucp" ? ucpStripe : acpStripe;
           if (config.noShowPolicy === "keep" || !client) outcome = config.noShowPolicy === "keep" ? "kept" : "refund_due";
@@ -396,6 +398,24 @@ export function createCollect(config: CollectConfig) {
         console.error(`[collect] expiring ${o.id} failed:`, err);
       }
     }
+    // New no-shows, and refunds that failed on an earlier sweep.
+    if (x402Refunder) {
+      for (const o of await store.listOrders({ statuses: ["expired"], limit: 100 })) {
+        if (o.rail !== "x402" || !o.refundDue) continue;
+        await refundX402(o.id).catch((err) => console.error(`[collect] refunding ${o.id} failed:`, err));
+      }
+    }
+  }
+
+  /** Pay an uncollected x402 order back to the wallet that paid it. Needs payments.x402.refunds. */
+  async function refundX402(orderId: string) {
+    if (!x402Refunder) throw new InputError("x402 refunds aren't set up.", 409);
+    const order = await store.getOrder(orderId);
+    if (!order || order.rail !== "x402" || !order.refundDue) throw new InputError("No x402 refund is due on this order.", 409);
+    const result = await x402Refunder.refund(order);
+    const updated = await store.updateOrder(order.id, { refundDue: false });
+    await emit("order.refunded", updated, { rail: "x402", ...result });
+    return { order: updated, ...result };
   }
 
   // ---------- HTTP ----------
@@ -816,6 +836,7 @@ export function createCollect(config: CollectConfig) {
     markReady,
     collect,
     sweep,
+    refundX402,
     passUrl,
     collectLink,
     stop: () => clearInterval(timer),

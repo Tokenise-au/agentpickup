@@ -28,22 +28,37 @@ export async function closeTestDb() {
 export const NETWORK = "eip155:84532" as const;
 export const PAY_TO = "0x1111111111111111111111111111111111111111";
 
-/** Accepts any well-formed payment whose amount and payee match; records what it settled. */
+type Authorization = { from: string; to: string; value: string; nonce: string };
+
+/**
+ * Accepts any well-formed payment whose amount and payee match; records what it settled. Like the USDC
+ * contract, it refuses an EIP-3009 nonce a wallet has already used.
+ */
 export class FakeFacilitator implements FacilitatorClient {
   settled: { payload: PaymentPayload; requirements: PaymentRequirements }[] = [];
   failSettle = false;
+  private usedNonces = new Set<string>();
 
   async verify(payload: PaymentPayload, requirements: PaymentRequirements) {
-    const auth = (payload.payload as { authorization?: { from: string; to: string; value: string } }).authorization;
+    const auth = (payload.payload as { authorization?: Authorization }).authorization;
+    if (auth && this.usedNonces.has(`${auth.from.toLowerCase()}:${auth.nonce}`)) {
+      return { isValid: false, invalidReason: "authorization_already_used", payer: auth.from };
+    }
     const ok = !!auth && auth.to.toLowerCase() === requirements.payTo.toLowerCase() && auth.value === requirements.amount;
     return ok ? { isValid: true, payer: auth!.from } : { isValid: false, invalidReason: "amount_or_payee_mismatch" };
   }
 
   async settle(payload: PaymentPayload, requirements: PaymentRequirements) {
-    const payer = (payload.payload as { authorization: { from: string } }).authorization.from;
+    const auth = (payload.payload as { authorization: Authorization }).authorization;
+    const payer = auth.from;
     if (this.failSettle) {
       return { success: false, errorReason: "insufficient_funds", transaction: "", network: requirements.network, payer };
     }
+    const used = `${auth.from.toLowerCase()}:${auth.nonce}`;
+    if (this.usedNonces.has(used)) {
+      return { success: false, errorReason: "authorization_already_used", transaction: "", network: requirements.network, payer };
+    }
+    this.usedNonces.add(used);
     this.settled.push({ payload, requirements });
     const tx = `0x${(this.settled.length).toString(16).padStart(64, "0")}`;
     return { success: true, transaction: tx, network: requirements.network, payer };

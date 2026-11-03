@@ -1,10 +1,13 @@
 import type { MiddlewareHandler } from "hono";
 import { sign } from "node:crypto";
-import type { SigningKey } from "@agentpickup/core";
+import type { Order, SigningKey } from "@agentpickup/core";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
+import type { FacilitatorClient } from "@x402/core/server";
 import type { PaymentPayload } from "@x402/core/types";
+import { getAddress, keccak256, toHex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { bazaarResourceServerExtension, declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import {
   createJWSOfferReceiptIssuer,
@@ -139,4 +142,84 @@ export function paymentIdFromRequest(headers: Headers): string | null {
   } catch {
     return null;
   }
+}
+
+
+/**
+ * Pays an uncollected x402 order back to the wallet that paid it, from the shop's refund wallet, as an
+ * EIP-3009 transfer the facilitator settles (and pays the gas for). The authorization's nonce comes from
+ * the order id, so the USDC contract itself refuses a second refund of the same order, even if two
+ * servers sweep at once.
+ */
+export function createX402Refunder(config: X402RailConfig, baseUrl: string) {
+  if (!config.refunds) return null;
+  const network = config.network ?? "eip155:84532";
+  const facilitator: FacilitatorClient =
+    config.facilitator ?? new HTTPFacilitatorClient({ url: config.facilitatorUrl ?? "https://x402.org/facilitator" });
+  const account = privateKeyToAccount(config.refunds.privateKey);
+  // The resource server knows each network's USDC contract and EIP-712 domain.
+  const server = new x402ResourceServer(facilitator).register(network, new ExactEvmScheme());
+  let ready: Promise<void> | null = null;
+
+  return {
+    address: account.address,
+    async refund(order: Order): Promise<{ transaction: string; amount: string; to: string }> {
+      if (!order.payer) throw new Error("no paying wallet on record");
+      ready ??= server.initialize();
+      await ready;
+      const cents = order.usdCents ?? order.totalCents;
+      const [requirements] = await server.buildPaymentRequirements({
+        scheme: "exact",
+        network,
+        payTo: order.payer,
+        price: `$${(cents / 100).toFixed(2)}`,
+        maxTimeoutSeconds: 300,
+      });
+      const { name, version } = requirements.extra as { name: string; version: string };
+      const authorization = {
+        from: account.address,
+        to: getAddress(order.payer),
+        value: requirements.amount,
+        validAfter: "0",
+        validBefore: String(Math.floor(Date.now() / 1000) + 300),
+        nonce: refundNonce(order.id),
+      };
+      const signature = await account.signTypedData({
+        domain: { name, version, chainId: Number(network.split(":")[1]), verifyingContract: getAddress(requirements.asset) },
+        types: {
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "TransferWithAuthorization",
+        message: {
+          ...authorization,
+          value: BigInt(authorization.value),
+          validAfter: 0n,
+          validBefore: BigInt(authorization.validBefore),
+        },
+      });
+      const payload: PaymentPayload = {
+        x402Version: 2,
+        resource: { url: `${baseUrl}/api/orders/${order.id}`, description: "Refund for an uncollected pickup order" },
+        accepted: requirements,
+        payload: { authorization, signature },
+      };
+      const verified = await facilitator.verify(payload, requirements);
+      if (!verified.isValid) throw new Error(`refund rejected: ${verified.invalidReason ?? "invalid"}`);
+      const settled = await facilitator.settle(payload, requirements);
+      if (!settled.success) throw new Error(`refund didn't settle: ${settled.errorReason ?? "unknown"}`);
+      return { transaction: settled.transaction, amount: requirements.amount, to: authorization.to };
+    },
+  };
+}
+
+/** One nonce per order: the USDC contract won't accept the same refund authorization twice. */
+export function refundNonce(orderId: string): `0x${string}` {
+  return keccak256(toHex(`agentpickup:refund:${orderId}`));
 }
