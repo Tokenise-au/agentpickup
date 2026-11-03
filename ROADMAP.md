@@ -15,11 +15,12 @@ where sellers look.
 
 - Live at [agentpickup.app](https://agentpickup.app): the Demo Café takes real USDC on Base, and a Square sandbox
   venue shows the Square flow end to end (menu in, order on Square's screens, "ready" from Square, scan to
-  collect).
-- On npm: `@agentpickup/core` 0.2.0, `@agentpickup/server` 0.6.1 and `@agentpickup/mcp` 0.2.0.
+  collect). Square sellers sign themselves up at [agentpickup.app/connect](https://agentpickup.app/connect)
+  (Square sandbox for now).
+- On npm: `@agentpickup/core` 0.2.0, `@agentpickup/server` 0.6.1 (0.7.0 with sign-up built) and `@agentpickup/mcp` 0.2.0.
 - In the official MCP Registry (0.2.0). Agents can find shops through the directory and `find_shops`.
-- Usable today by developers who self-host the library. Sellers can't sign up by themselves, and it isn't in the
-  Square App Marketplace.
+- Usable today by developers who self-host the library, and by Square sellers through /connect once it uses a
+  production Square app. Not in the Square App Marketplace yet.
 
 ## Phase 0: ship what's built (done 2026-11-03)
 
@@ -34,7 +35,12 @@ hello@agentpickup.app.
 
 **Done when** the packages on npm match the live site and the legal pages are up.
 
-## Phase 1: sellers connect their own Square (next)
+## Phase 1: sellers connect their own Square (done 2026-11-03, on the Square sandbox)
+
+Checked live: a sandbox café signed up at /connect, an agent found it through `find_shops`, ordered from its
+Square menu, the order arrived in Square as a paid pickup order, and marking it ready in Square sent the QR email
+about a second later. The payment was test mode: the demo wallets had no test USDC (USDC itself is proven on the
+Demo Café). Before real cafés: a production Square app (redirect URL and keys, `SQUARE_ENVIRONMENT=production`).
 
 | What | Who | Size |
 |---|---|---|

@@ -82,7 +82,10 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [x] One app-level Square webhook for every venue, routed by location, so new venues get "ready" with no setup
 - [x] Wizard pages and the seller page; "Integrate it" buttons point at it (partner form until sign-up is switched on)
 - [x] `fxToUsdCents`: ECB rates through Frankfurter, so AUD venues can take USDC
-- [ ] Dave: in the Square Developer Console add the redirect URL `https://agentpickup.app/connect/square/callback` (sandbox first) and put the app secret in `.env` (one-page guide)
+- [x] Dave: sandbox redirect URL and app keys (2026-11-03); app-level webhook `wbhk_d429…` registered at /connect/square/webhook
+- [x] Checked live on the sandbox: sign-up, agent order through the MCP, order in Square, ready in Square, QR email in ~1 s
+- [ ] Production Square app: redirect URL, keys, `SQUARE_ENVIRONMENT=production`, its own webhook subscription (before Phase 3)
+- [ ] Repeat the agent's USDC payment on a wizard venue once a wallet has Base Sepolia test USDC
 - Size: about 4-6 hours, built and tested on the Square sandbox first
 
 **Payments step.** Money always goes straight to the seller, never through us.
