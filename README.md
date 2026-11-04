@@ -3,10 +3,11 @@
 The pickup layer for agent payments: click and collect for people and their AI agents.
 
 1. Someone buys online: a person at checkout, or an AI agent through x402, MPP, UCP or ACP.
-2. They pay by card (Stripe), USDC (x402), or a Stripe Shared Payment Token handed over by an agent platform.
+2. They pay by card through the shop's Square (Apple Pay and Google Pay too) or Stripe, in USDC (x402), or with a
+   Stripe Shared Payment Token handed over by an agent platform.
 3. An email arrives from the shop with a signed QR and a short pickup code.
 4. Staff scan it with any phone camera, the built-in scanner, or a USB scanner.
-5. The order is handed over. A card hold is captured at that moment; no-shows are released or refunded.
+5. The order is handed over. A Stripe card hold is captured at that moment; no-shows are refunded or released.
 
 Shoppers and staff only ever see the shop's name, colours and email address.
 
@@ -412,7 +413,10 @@ so the URLs it reports, such as the resource in an x402 quote, match what client
   amounts stay on the server. The QR encodes `https://<shop>/c/<token>` (~250 characters), so a
   normal phone camera opens it. Each pass is good for one pickup: the order moves
   `paid/ready → collected` in one atomic update, so two scanners can't both hand it over.
-- **Card payments** use Stripe Checkout with `capture_method: manual`. The hold is captured on scan,
+- **Card payments through Square** are charged on the Square order when the customer pays on the shop's
+  checkout page (Square only shows paid orders on its screens), and refunded through Square if nobody
+  collects in time (`noShowPolicy: "keep"` keeps the money instead).
+- **Card payments through Stripe** use Stripe Checkout with `capture_method: manual`. The hold is captured on scan,
   and released if nobody collects in time (`noShowPolicy: "keep"` captures it instead). Card holds
   lapse after about 7 days, so use `captureMode: "charge"` for longer pickup windows.
 - **Agent payments** (x402, MPP, UCP, ACP) are charged at order time. Uncollected MPP, UCP and ACP card
