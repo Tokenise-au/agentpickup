@@ -8,7 +8,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { generateSigningKeyPem, type CollectEvent, type Order } from "@agentpickup/core";
-import type { CatalogItem, CollectConfig, MerchantConfig } from "./config.js";
+import type { CatalogItem, CollectConfig, MerchantConfig, Problem } from "./config.js";
 import type { Mailer } from "./mail.js";
 import type { Store } from "./store.js";
 import { parseCatalog } from "./connect.js";
@@ -117,6 +117,8 @@ export interface VenueHostConfig {
   toUsdCents?: (cents: number, currency: string) => number | Promise<number>;
   /** Called for every order event at every venue, with the venue's slug, e.g. for usage reports. */
   onEvent?: (slug: string, event: CollectEvent, order: Order) => void | Promise<void>;
+  /** A failure at a venue worth an alert (see CollectConfig.onProblem), plus venues that won't start and failed Square renewals. */
+  onProblem?: (slug: string, problem: Problem) => void;
   /**
    * Listings other sites register with the directory (POST /directory/v1/listings): another agentPickup install,
    * or any shop taking agent payments at a counter. On by default; false turns registration off. Each is checked
@@ -340,6 +342,14 @@ export function createVenueHost(cfg: VenueHostConfig) {
             ]
           : [],
       ...(s.webhook && secrets.webhookSecret ? { webhook: { url: s.webhook.url, secret: secrets.webhookSecret } } : {}),
+      ...(cfg.shared?.onProblem || cfg.onProblem
+        ? {
+            onProblem: (p: Problem) => {
+              cfg.shared?.onProblem?.(p);
+              cfg.onProblem?.(record.slug, p);
+            },
+          }
+        : {}),
       ...(cfg.shared?.onEvent || cfg.onEvent
         ? {
             onEvent: async (event: CollectEvent, order: Order) => {
@@ -361,6 +371,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
       // A venue that can't start (a secret sealed with another key, a bad setting) stays down; the others run.
       failed.set(record.slug, err instanceof Error ? err.message : String(err));
       console.error(`[venues] ${record.slug} didn't start:`, err);
+      cfg.onProblem?.(record.slug, { kind: "venue", message: failed.get(record.slug)!.slice(0, 500) });
     }
   }
 
@@ -513,6 +524,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
         renewed.push(merchantId);
       } catch (err) {
         console.error(`[venues] renewing Square access for ${slug} failed:`, err);
+        cfg.onProblem?.(slug, { kind: "square-renewal", message: (err instanceof Error ? err.message : String(err)).slice(0, 500) });
       }
     }
     return renewed;

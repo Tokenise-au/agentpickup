@@ -127,6 +127,16 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [ ] Privacy policy, terms and support pages on agentpickup.app
 - [ ] Apply for a listing; Square reviews apps before they're listed (check the current requirements and timing first)
 
+## Phase 2: safe to run real orders (2026-11-04)
+
+- [x] Library: `onProblem` on `createCollect` and `createVenueHost` for failures once they're final (POS calls after retries, emails, refunds, expiries, webhooks, syncs, venues that won't start, Square renewals)
+- [x] Nightly encrypted backups of every database and key file to the ops Worker (KV, 35 days), `scripts/restore-backup.ts`
+- [x] The ops Worker (`ops/`): uptime and `/ops/health` checks every 5 minutes, alert emails to the operator, "back" and "all clear" follow-ups
+- [x] `/admin/ops`: health now, backups, problems, each venue's latest orders, and a test-alert button
+- [x] Venues get their own email limits (30 per address, 150 a day), no longer the public demo's 3 and 100
+- [ ] Dave: put `OPS_URL`, `OPS_KEY` and `BACKUP_KEY` from `~/.agentpickup/ops.env` into Railway; keep `BACKUP_KEY` in a password manager
+- [ ] Then: switch the Worker's schedule back on, run the first backup, restore it, and send a test alert (done when a restore works and the alert arrives within minutes)
+
 ## Next: get it in front of people (2026-11-04)
 
 The product is ahead of demand, so these come before more features. Order of play:

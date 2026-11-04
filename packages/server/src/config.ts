@@ -95,6 +95,15 @@ export interface X402RailConfig {
   refunds?: { privateKey: `0x${string}` };
 }
 
+/** A failure worth an alert. `message` is the error's text, cut to 500 characters. */
+export interface Problem {
+  kind: "connector" | "email" | "refund" | "expiry" | "webhook" | "sync" | "venue" | "square-renewal";
+  message: string;
+  orderId?: string;
+  /** For "connector": which one, e.g. "square". */
+  connector?: string;
+}
+
 export interface CollectConfig {
   /** Public origin the QR links point at, e.g. "https://orders.yourshop.com". */
   baseUrl: string;
@@ -159,6 +168,11 @@ export interface CollectConfig {
   allowOpenStaff?: boolean;
   /** Called for every order event, e.g. to push into a POS or kitchen screen. */
   onEvent?: (event: CollectEvent, order: Order) => void | Promise<void>;
+  /**
+   * Something failed that a person may need to look at, once it's final: a POS call after its retries, an
+   * email that didn't send, a refund, expiry or webhook that failed, a menu or profile sync. For alerts.
+   */
+  onProblem?: (problem: Problem) => void;
   /** POSTed a signed JSON copy of every event. */
   webhook?: { url: string; secret: string };
 }

@@ -1,0 +1,15 @@
+// The ops Worker: uptime checks and alerts every five minutes, and the store for the app's encrypted backups.
+// Deploy from this folder: wrangler deploy. Secrets (wrangler secret put): OPS_KEY (the same as the app's), ALERT_TO.
+{
+  "name": "agentpickup-ops",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "triggers": { "crons": [] },
+  "kv_namespaces": [{ "binding": "OPS", "id": "4b34f4db467d4fcc99d5dc07d71799cc" }],
+  "send_email": [{ "name": "EMAIL" }],
+  "vars": {
+    "SITE_URL": "https://agentpickup.app",
+    "ALERT_FROM": "alerts@agentpickup.app"
+  },
+  "observability": { "enabled": true }
+}

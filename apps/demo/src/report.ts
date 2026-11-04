@@ -64,6 +64,8 @@ export function createUsage(db: DatabaseSync) {
 
   /** One request, after it was answered: pages, the directory, menus, sign-up steps, errors. */
   function request(method: string, path: string, status: number, ua: string | undefined, location: string | null) {
+    // The ops Worker's uptime checks aren't visitors.
+    if (ua?.startsWith("agentpickup-uptime")) return;
     const pages = ["/", "/connect", "/wallet", "/seller", "/support", "/privacy", "/terms"];
     if (method === "GET" && pages.includes(path) && status === 200) count(isPerson(ua) ? "page.person" : "page.bot", path);
     if (path === "/directory/v1/shops") count("directory", clientOf(ua));

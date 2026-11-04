@@ -23,6 +23,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { createDemoAgent, DEMO_NETWORKS, TESTNET } from "./demo-agent.js";
 import { createUsage, renderReport, reportData, startReportJob, type ReportSources } from "./report.js";
+import { backupKeyFrom, createOps, recentOrders, renderOpsPage } from "./ops.js";
 
 const env = process.env;
 const port = Number(env.PORT ?? 8402);
@@ -56,6 +57,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS waitlist (
   id TEXT PRIMARY KEY, email TEXT NOT NULL, kind TEXT NOT NULL, note TEXT, created_at INTEGER NOT NULL
 )`);
 const usage = createUsage(db);
+// Nightly encrypted backups to the ops Worker, the failures worth an alert, and what /ops/health reports.
+const ops = createOps({
+  db,
+  dataDir,
+  target: env.OPS_URL && env.OPS_KEY ? { url: env.OPS_URL.replace(/\/$/, ""), key: env.OPS_KEY } : undefined,
+  backupKey: env.BACKUP_KEY ? backupKeyFrom(env.BACKUP_KEY) : undefined,
+  venuesDown: async () => {
+    if (!venueHost) return [];
+    const res = await venueHost.app.request(`${baseUrl}/host/v1/venues`, { headers: { Authorization: `Bearer ${env.VENUE_ADMIN_KEY}` } });
+    const { venues } = (await res.json()) as { venues: { slug: string; running: boolean; error?: string }[] };
+    return venues.filter((v) => !v.running).map((v) => ({ slug: v.slug, error: v.error ?? "stopped" }));
+  },
+});
+ops.start();
 // Real email through Cloudflare Email Sending (or Resend), from orders@agentpickup.app. It's a public demo, so
 // sends are capped per address and per day; without a key, emails only show on the page.
 const sender = env.MAIL_SENDER || "orders@agentpickup.app";
@@ -65,7 +80,10 @@ const delivering =
     : env.RESEND_API_KEY
       ? resendMailer({ apiKey: env.RESEND_API_KEY })
       : null;
-const mailer = delivering ? cappedMailer(delivering, { perRecipientPerDay: 3, perDay: 100 }) : outboxMailer();
+const mailer = delivering ? cappedMailer(delivering, { perRecipientPerDay: 3, perDay: 50 }) : outboxMailer();
+// Venues are real shops: their own limits, so a busy demo never stops a café's receipts. The two add up to
+// Cloudflare's 200 a day; a regular can order many times a day.
+const venueMailer = delivering ? cappedMailer(delivering, { perRecipientPerDay: 30, perDay: 150 }) : outboxMailer();
 
 // The demo's wallets. On Base Sepolia the café's own address is the payTo, so it can hand test USDC back
 // to the agent. On Base mainnet, payments go to X402_PAY_TO (the owner's wallet): the café key, which sits
@@ -134,6 +152,7 @@ const collect = createCollect({
   allowOpenStaff: !env.STAFF_KEY,
   exposeEmailPreview: true,
   onEvent: (event, order) => usage.order("demo-cafe", event, order),
+  onProblem: (p) => ops.problem("demo-cafe", p),
 });
 
 // A real agent wallet that pays demo orders over x402, so the demo settles on-chain.
@@ -294,7 +313,7 @@ const venueHost =
         baseUrl,
         store: new SqliteStore(join(dataDir, "venues.db")),
         storeFor: (slug) => new SqliteStore(join(dataDir, "venues", `${slug}.db`)),
-        mailer,
+        mailer: venueMailer,
         sendFrom: sender,
         secretKey: env.VENUE_SECRET,
         adminKeys: [env.VENUE_ADMIN_KEY],
@@ -307,6 +326,7 @@ const venueHost =
         // Australian venues price in AUD; USDC is US dollars.
         toUsdCents: fxToUsdCents(),
         onEvent: (slug, event, order) => usage.order(slug, event, order),
+        onProblem: (slug, p) => ops.problem(slug, p),
       })
     : null;
 if (venueHost) app.route("/", venueHost.app);
@@ -328,6 +348,44 @@ const isAdmin = (key: string | undefined) => Boolean(env.ADMIN_KEY && key === en
 app.get("/admin/report", async (c) => {
   if (!isAdmin(c.req.query("key"))) return c.json({ error: "Not found." }, 404);
   return c.html(renderReport(await reportData(reportSources, c.req.query("day") ?? reportJob.yesterday())).html);
+});
+// ---------- ops: health for the ops Worker, and the admin view ----------
+app.get("/ops/health", async (c) => {
+  const given = c.req.header("authorization")?.replace(/^Bearer /, "") ?? "";
+  if (!env.OPS_KEY || given !== env.OPS_KEY) return c.json({ error: "Not found." }, 404);
+  return c.json(await ops.health());
+});
+app.get("/admin/ops", async (c) => {
+  const key = c.req.query("key");
+  if (!isAdmin(key)) return c.json({ error: "Not found." }, 404);
+  const listed = venueHost
+    ? (((await (await venueHost.app.request(`${baseUrl}/host/v1/venues`, { headers: { Authorization: `Bearer ${env.VENUE_ADMIN_KEY}` } })).json()) as {
+        venues: { slug: string; running: boolean; settings: { merchant: { name: string }; payments?: { test?: boolean } } }[];
+      }).venues ?? [])
+    : [];
+  const venues = [
+    { slug: "demo-cafe", name: "Demo Café", running: true, test: true, orders: recentOrders(join(dataDir, "collect.db")) },
+    ...listed.map((v) => ({
+      slug: v.slug,
+      name: v.settings.merchant.name,
+      running: v.running,
+      test: Boolean(v.settings.payments?.test),
+      orders: recentOrders(join(dataDir, "venues", `${v.slug}.db`)),
+    })),
+  ];
+  return c.html(
+    renderOpsPage({ health: await ops.health(), backups: ops.recentBackups(), problems: ops.recentProblems(), venues, adminKey: key!, sent: c.req.query("sent") === "1" }),
+  );
+});
+app.post("/admin/ops/test-alert", (c) => {
+  const key = c.req.query("key");
+  if (!isAdmin(key)) return c.json({ error: "Not found." }, 404);
+  ops.testAlert(15);
+  return c.redirect(`/admin/ops?key=${encodeURIComponent(key!)}&sent=1`, 303);
+});
+app.post("/admin/ops/backup", async (c) => {
+  if (!isAdmin(c.req.query("key"))) return c.json({ error: "Not found." }, 404);
+  return c.json(await ops.backup());
 });
 app.post("/admin/report/send", async (c) => {
   if (!isAdmin(c.req.query("key"))) return c.json({ error: "Not found." }, 404);

@@ -61,9 +61,10 @@ Square.
 
 | What | Who | Size |
 |---|---|---|
-| Nightly backups of the venue databases, with a restore tested once | Claude | 2 h |
-| Uptime check on the site, the directory and `/mcp`, plus alerts on failed emails, Square calls and refunds, to you | Claude | 2 h |
-| An admin view of every venue's recent orders and failures (the admin API has the data) | Claude | in the above |
+| Nightly backups of the venue databases, with a restore tested once (built 2026-11-04: encrypted, to the ops Worker, 35 days; `scripts/restore-backup.ts`) | Claude | 2 h |
+| Uptime check on the site, the directory and `/mcp`, plus alerts on failed emails, Square calls and refunds, to you (built 2026-11-04: the ops Worker, every 5 minutes, by email) | Claude | 2 h |
+| An admin view of every venue's recent orders and failures (built 2026-11-04: `/admin/ops`) | Claude | in the above |
+| Put `OPS_URL`, `OPS_KEY` and `BACKUP_KEY` in Railway, and keep `BACKUP_KEY` in your password manager | Dave | 5 min |
 | Usage counters and the 8am Brisbane report email: agents, orders, sellers, site, money, problems (done 2026-11-04) | Claude | done |
 
 **Done when** a restore from last night's backup works and a forced failure reaches you within minutes.

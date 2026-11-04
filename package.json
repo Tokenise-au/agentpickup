@@ -12,7 +12,7 @@
     "dev": "node --conditions=source --env-file-if-exists=.env --import tsx --watch apps/demo/src/main.ts",
     "start": "node --conditions=source --env-file-if-exists=.env --import tsx apps/demo/src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --conditions=source --import tsx --test packages/core/test/*.test.ts packages/server/test/*.test.ts packages/mcp/test/*.test.ts"
+    "test": "node --conditions=source --import tsx --test packages/core/test/*.test.ts packages/server/test/*.test.ts packages/mcp/test/*.test.ts apps/demo/test/*.test.ts"
   },
   "engines": {
     "node": "22.x"

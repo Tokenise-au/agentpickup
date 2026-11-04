@@ -18,7 +18,7 @@ import {
   type OrderItem,
   type PaymentRail,
 } from "@agentpickup/core";
-import type { CatalogItem, CollectConfig, MerchantProfile } from "./config.js";
+import type { CatalogItem, CollectConfig, MerchantProfile, Problem } from "./config.js";
 import { listingOf, type ShopListing } from "./directory.js";
 import { createGroups, GroupError } from "./groups.js";
 import { listingDocument } from "./listing.js";
@@ -59,6 +59,7 @@ export type {
   PickupLocation,
   StripeRailConfig,
   X402RailConfig,
+  Problem,
 } from "./config.js";
 export type { MppRailConfig, StripeLike } from "./rails/mpp.js";
 export type { AcpConfig } from "./acp.js";
@@ -203,6 +204,15 @@ export function createCollect(config: CollectConfig) {
 
   // ---------- events ----------
 
+  /** Tell the host about a failure it may need to fix. Never throws. */
+  function problem(kind: Problem["kind"], err: unknown, extra: Partial<Pick<Problem, "orderId" | "connector">> = {}) {
+    try {
+      config.onProblem?.({ kind, message: (err instanceof Error ? err.message : String(err)).slice(0, 500), ...extra });
+    } catch (hookErr) {
+      console.error("[collect] onProblem failed:", hookErr);
+    }
+  }
+
   async function emit(type: CollectEventType, order: Order, data?: Record<string, unknown>) {
     const event: CollectEvent = { id: newId("evt"), type, orderId: order.id, at: Date.now(), data };
     await store.addEvent(event);
@@ -220,7 +230,10 @@ export function createCollect(config: CollectConfig) {
         method: "POST",
         headers: { "Content-Type": "application/json", "Collect-Signature": `t=${ts},v1=${sig}` },
         body,
-      }).catch((err) => console.error(`[collect] webhook ${type} failed:`, err));
+      }).catch((err) => {
+        console.error(`[collect] webhook ${type} failed:`, err);
+        problem("webhook", err, { orderId: order.id });
+      });
     }
   }
 
@@ -259,6 +272,7 @@ export function createCollect(config: CollectConfig) {
       await emit("pass.emailed", order, { kind, to: order.customerEmail, delivered: config.mailer.delivers, ...(messageId ? { messageId } : {}) });
     } catch (err) {
       console.error("[collect] email failed:", err);
+      problem("email", err, { orderId: order.id });
       await emit("pass.emailed", order, { kind, to: order.customerEmail, delivered: false, error: String(err) });
     }
   }
@@ -521,13 +535,17 @@ export function createCollect(config: CollectConfig) {
         if (expired) await emit("order.expired", expired, { outcome });
       } catch (err) {
         console.error(`[collect] expiring ${o.id} failed:`, err);
+        problem("expiry", err, { orderId: o.id });
       }
     }
     // New no-shows, and refunds that failed on an earlier sweep.
     if (x402Refunder) {
       for (const o of await store.listOrders({ statuses: ["expired"], limit: 100 })) {
         if (o.rail !== "x402" || !o.refundDue) continue;
-        await refundX402(o.id).catch((err) => console.error(`[collect] refunding ${o.id} failed:`, err));
+        await refundX402(o.id).catch((err) => {
+          console.error(`[collect] refunding ${o.id} failed:`, err);
+          problem("refund", err, { orderId: o.id });
+        });
       }
     }
   }
@@ -667,7 +685,10 @@ export function createCollect(config: CollectConfig) {
       const key = `${connector.name}:${order.id}`;
       const run = (pending.get(key) ?? Promise.resolve())
         .then(() => retry(() => connector.onEvent!(event, order, ctx)))
-        .catch((err) => console.error(`[collect] ${connector.name}: ${event.type} for ${order.id} failed:`, err));
+        .catch((err) => {
+          console.error(`[collect] ${connector.name}: ${event.type} for ${order.id} failed:`, err);
+          problem("connector", err, { orderId: order.id, connector: connector.name });
+        });
       pending.set(key, run);
       void run.finally(() => {
         if (pending.get(key) === run) pending.delete(key);
@@ -722,8 +743,16 @@ export function createCollect(config: CollectConfig) {
   }
   /** Pull the menu and the venue's profile from the connectors. Runs at start and hourly. */
   async function syncConnectors() {
-    await syncProfile().catch((err) => console.error("[collect] syncing the profile failed:", err));
-    if (connectors.some((c) => c.fetchCatalog)) await syncCatalog().catch((err) => console.error("[collect] syncing the menu failed:", err));
+    await syncProfile().catch((err) => {
+      console.error("[collect] syncing the profile failed:", err);
+      problem("sync", err);
+    });
+    if (connectors.some((c) => c.fetchCatalog)) {
+      await syncCatalog().catch((err) => {
+        console.error("[collect] syncing the menu failed:", err);
+        problem("sync", err);
+      });
+    }
   }
   const ready = Promise.all([menuReady, profileReady])
     .then(() => (connectors.length ? syncConnectors() : undefined))

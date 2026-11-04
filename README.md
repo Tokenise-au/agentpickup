@@ -15,7 +15,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # 193 tests: every path on SQLite, and again on Postgres (in-process PGlite)
+npm test           # 282 tests: every path on SQLite, and again on Postgres (in-process PGlite)
 npm run typecheck
 ```
 
@@ -28,10 +28,11 @@ sending them. Copy `.env.example` to `.env` to switch things on:
 | `STRIPE_PROFILE_ID` | The Stripe profile id advertised to UCP platforms. |
 | `X402_PAY_TO`, `X402_NETWORK`, `X402_FACILITATOR_URL` | x402 agent payments. `eip155:84532` is Base Sepolia (test USDC, x402.org facilitator), where the demo café wallet takes the payments. `eip155:8453` is Base mainnet (real USDC, PayAI's keyless facilitator by default), where payments go only to `X402_PAY_TO`. |
 | `MPP_NETWORK_ID`, `MPP_CHALLENGE_SECRET` | MPP agent payments by card or Link into your Stripe (needs Stripe's MPP access). |
-| `CLOUDFLARE_EMAIL_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Real email through Cloudflare Email Sending (token: Account > Email Sending > Edit), from `MAIL_SENDER` (default `orders@agentpickup.app`). The demo caps sends at 3 per address and 100 a day. |
+| `CLOUDFLARE_EMAIL_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Real email through Cloudflare Email Sending (token: Account > Email Sending > Edit), from `MAIL_SENDER` (default `orders@agentpickup.app`). The demo shop caps sends at 3 per address and 50 a day; venues get their own 30 per address and 150 a day, which together fit Cloudflare's 200. |
 | `RESEND_API_KEY`, `MAIL_FROM` | Real email through Resend instead. |
 | `STAFF_KEY` | Locks the scanner. Without it the demo runs with `allowOpenStaff`. |
-| `ADMIN_KEY` | Read waitlist signups at `/admin/waitlist?key=…`. |
+| `ADMIN_KEY` | Read waitlist signups at `/admin/waitlist?key=…`, the 8am report at `/admin/report?key=…`, and backups, problems and every venue's latest orders at `/admin/ops?key=…`. |
+| `OPS_URL`, `OPS_KEY`, `BACKUP_KEY` | Nightly encrypted backups to the ops Worker, and `/ops/health` for its checks (see Backups and alerts). |
 | `SIGNING_KEY_PEM`, `AP2_SIGNING_KEY_PEM` | Pass signing (Ed25519) and AP2 merchant signatures (ES256). Generated into `data/` if unset. |
 | `DEMO_AGENT_KEY`, `DEMO_CAFE_KEY`, `DEMO_AGENT_MAX_ORDER`, `DEMO_AGENT_DAILY_LIMIT` | The demo's own wallets. The agent pays demo orders over x402 for real (the button on the page and the hosted `/mcp`): up to $20 an order and 60 a day on testnet, $10 and 20 on mainnet. On testnet the café is the payTo and hands test USDC back when the agent runs low; on mainnet the café key is ignored, the agent pays `X402_PAY_TO`, and you top it up. Keep only a small balance in the agent: its key sits in server config. |
 
@@ -410,13 +411,38 @@ so the URLs it reports, such as the resource in an x402 quote, match what client
 - **Webhooks**: set `webhook: { url, secret }` and every event is POSTed with a
   `Collect-Signature: t=<unix>,v1=<hmac-sha256(secret, "<t>.<body>")>` header.
 
+## Backups and alerts
+
+The hosted install keeps everything in SQLite files on one disk, so two things watch over it:
+
+- **Nightly backups.** After 3am Brisbane the app snapshots every database (`VACUUM INTO`, so the copy is
+  consistent while it runs) and key file in the data folder, venues included, gzips each, encrypts it with
+  AES-256-GCM under `BACKUP_KEY`, and sends it to the ops Worker, then a manifest with each file's SHA-256. The
+  Worker keeps 35 days in KV and only ever sees ciphertext. A failed run is tried again within the hour.
+  `POST /admin/ops/backup?key=…` runs one now.
+- **Restore.** `node --conditions=source --import tsx scripts/restore-backup.ts [--day YYYY-MM-DD]` downloads a
+  night into `restored/<day>/`, checks every file against its manifest hash and every database with SQLite's
+  integrity check, and prints each table's rows. It never touches live data: to put a night back, stop the
+  service and copy the files into its data folder.
+- **Alerts.** The ops Worker (`ops/`, deployed with `wrangler deploy`) checks the site, the directory, `/mcp`
+  and `/ops/health` every five minutes and emails `ALERT_TO` from `alerts@agentpickup.app`. Outages alert after
+  two failed checks in a row and again when they recover. `/ops/health` lists what needs a person: no good
+  backup in 26 hours, failures at a venue in the last hour (a POS call after its retries, an email that didn't
+  send, a refund, expiry, webhook or sync, a Square renewal), and venues that won't start; each new set of
+  issues alerts at the next check, repeats every 6 hours while it lasts, and ends with an "All clear". The
+  library reports those failures through `onProblem` (`createCollect`) and `onProblem(slug, problem)`
+  (`createVenueHost`). The demo's per-address email cap working isn't a problem.
+- **Proving it.** "Send a test alert" on `/admin/ops` makes `/ops/health` report a problem for 15 minutes; the
+  email should arrive within five.
+
 ## Layout
 
 ```
 packages/core     @agentpickup/core    pass signing/verifying, ids, types (no dependencies)
 packages/server   @agentpickup/server  Hono app: orders, payments, protocols, email, scanner, pages
 packages/mcp      @agentpickup/mcp     MCP server (stdio and Streamable HTTP) for agents ordering from a shop
-apps/demo         the product site: landing page, live demo shop, demo agent wallet, hosted /mcp, waitlist
+apps/demo         the product site: landing page, live demo shop, demo agent wallet, hosted /mcp, waitlist, ops
+ops               the ops Worker: uptime checks, alert emails, the encrypted backup store
 ```
 
 The repo folder is still called `collect402`; the product and packages are agentPickup.
