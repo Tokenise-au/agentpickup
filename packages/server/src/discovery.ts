@@ -27,6 +27,16 @@ export function openApiDocument(o: {
   const free = { security: [] as unknown[] };
   const json = (schema: Record<string, unknown>) => ({ content: { "application/json": { schema } } });
   const rails = [o.rails.card && "card", o.rails.x402 && "x402", o.rails.mpp && "mpp", o.rails.test && "test"].filter(Boolean);
+  const items = {
+    type: "array",
+    minItems: 1,
+    maxItems: 20,
+    items: {
+      type: "object",
+      properties: { id: { type: "string", enum: o.catalog.map((i) => i.id) }, qty: { type: "integer", minimum: 1, maximum: 20 } },
+      required: ["id", "qty"],
+    },
+  };
 
   const paths: Record<string, unknown> = {
     "/api/catalog": {
@@ -42,16 +52,7 @@ export function openApiDocument(o: {
           ...json({
             type: "object",
             properties: {
-              items: {
-                type: "array",
-                minItems: 1,
-                maxItems: 20,
-                items: {
-                  type: "object",
-                  properties: { id: { type: "string", enum: o.catalog.map((i) => i.id) }, qty: { type: "integer", minimum: 1, maximum: 20 } },
-                  required: ["id", "qty"],
-                },
-              },
+              items,
               email: { type: "string", format: "email", description: "Where the pickup QR is sent" },
               name: { type: "string", maxLength: 60 },
               rail: { type: "string", enum: rails },
@@ -74,19 +75,25 @@ export function openApiDocument(o: {
   };
 
   if (o.rails.x402) {
+    const paymentInfo = {
+      // A shop priced in another currency converts per order, so there's no fixed USD range to state.
+      price:
+        o.currency === "usd"
+          ? { mode: "dynamic", currency: "USD", min: usd(Math.min(...prices)), max: usd(Math.max(...prices) * 20 * 20) }
+          : { mode: "dynamic", currency: "USD" },
+      protocols: [{ x402: {} }],
+    };
+    const paid = {
+      200: { description: "Paid. Returns the order and the pickup pass link." },
+      400: { description: "Unknown items or quantities" },
+      402: { description: "Payment Required" },
+    };
     paths["/api/orders/{id}/pay"] = {
       post: {
         operationId: "payOrder",
         summary: "Pay for an order over x402. The pickup QR is emailed once the payment settles.",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-        "x-payment-info": {
-          // A shop priced in another currency converts per order, so there's no fixed USD range to state.
-          price:
-            o.currency === "usd"
-              ? { mode: "dynamic", currency: "USD", min: usd(Math.min(...prices)), max: usd(Math.max(...prices) * 20 * 20) }
-              : { mode: "dynamic", currency: "USD" },
-          protocols: [{ x402: {} }],
-        },
+        "x-payment-info": paymentInfo,
         responses: {
           200: { description: "Paid. Returns the order, the pass link and a signed receipt." },
           402: { description: "Payment Required" },
@@ -101,6 +108,39 @@ export function openApiDocument(o: {
         summary: "Fetch the pickup pass again by signing in with the wallet that paid",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "Pass link and pickup code" }, 402: { description: "Sign-in challenge" }, 403: { description: "Signed in, but not the payer" } },
+      },
+    };
+    // The one-step order at a fixed address, which x402 catalogues list and probe. x402scan registers a URL only
+    // when it's described here.
+    paths["/api/x402/order"] = {
+      get: {
+        operationId: "orderAndPay",
+        summary: "Order and pay in one call over x402. The response carries the pickup pass.",
+        parameters: [
+          {
+            name: "items",
+            in: "query",
+            required: false,
+            description: "id:qty pairs, comma-separated. With none, one of the first menu item.",
+            schema: { type: "string", ...(o.catalog[0] ? { example: `${o.catalog[0].id}:1` } : {}) },
+          },
+          { name: "name", in: "query", required: false, description: "Name for the order, shown to staff", schema: { type: "string", maxLength: 60 } },
+        ],
+        "x-payment-info": paymentInfo,
+        responses: paid,
+      },
+      post: {
+        operationId: "orderAndPayWithEmail",
+        summary: "Order and pay in one call over x402, with the pickup QR emailed too.",
+        requestBody: {
+          required: false,
+          ...json({
+            type: "object",
+            properties: { items, email: { type: "string", format: "email", description: "Where the pickup QR is sent" }, name: { type: "string", maxLength: 60 } },
+          }),
+        },
+        "x-payment-info": paymentInfo,
+        responses: paid,
       },
     };
   }

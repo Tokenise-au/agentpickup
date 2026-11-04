@@ -142,4 +142,11 @@ test("openapi.json describes the paid route and the sign-in route for x402scan",
   assert.deepEqual(doc.paths["/api/orders/{id}/pass"].get.security, [{ siwx: [] }]);
   assert.deepEqual(doc.paths["/api/orders"].post.security, []);
   assert.ok(doc.components.securitySchemes.siwx);
+  // The fixed order address is described too: x402scan registers only URLs in this document.
+  const order = doc.paths["/api/x402/order"];
+  for (const method of ["get", "post"]) {
+    assert.deepEqual((order[method]["x-payment-info"] as { protocols: unknown[] }).protocols, [{ x402: {} }], method);
+    assert.ok((order[method].responses as Record<string, unknown>)["402"], method);
+  }
+  assert.deepEqual((order.get.parameters as { name: string }[]).map((p) => p.name), ["items", "name"]);
 });
