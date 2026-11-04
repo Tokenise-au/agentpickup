@@ -143,7 +143,7 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 The product is ahead of demand, so these come before more features. Order of play:
 
 - [x] Production Square app, so real cafés can sign up (2026-11-04; one real sign-in still to try)
-- [ ] Publish core 0.3.0, server 0.8.0, mcp 0.3.0, then the MCP Registry 0.3.0, before any outreach goes out (Dave)
+- [x] Publish core 0.3.0, server 0.8.0, mcp 0.3.0, then the MCP Registry 0.3.0, before any outreach goes out (Dave, 2026-11-05; the registry lists 0.3.0 as latest)
 - [ ] Coinbase Agentic Wallet test: Dave signs in, adds about $2 of USDC on Base, and asks Claude to buy a $0.50 babyccino at the Demo Café (the first end-to-end run with a real person's wallet)
 - [ ] A short demo video: Claude, a Coinbase wallet and agentPickup buying a coffee and collecting it (after the wallet test)
 - [ ] Outreach tracker: add the wallet companies (Coinbase, Safe, Cobo, FluxA, Privy, Turnkey) with drafts (Claude); Dave sends, PayAI, Coinbase and the x402 Foundation first
