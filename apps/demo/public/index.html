@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>agentPickup: agents order, people pick up</title>
-<meta name="description" content="agentPickup lets AI agents order and pay at real shops, and people collect with a signed QR. Venues connect their Square in minutes and keep their POS. Agents pay in USDC over x402 or by card through Stripe, straight to the venue.">
+<meta name="description" content="agentPickup lets AI agents order and pay at real shops, and people collect with a signed QR: retail, cafés, deliveries, anything handed over in person. Venues connect their Square in minutes and keep their POS. Agents pay in USDC over x402 or by card through Stripe, straight to the venue.">
 <meta name="theme-color" content="#0a0b0d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
   <div class="wrap nav-inner">
     <a class="brand" href="#top" aria-label="agentPickup home"><i></i><span><span class="dim">agent</span>Pickup</span></a>
     <nav class="links" aria-label="Sections">
-      <a href="#how">/how</a><a href="#venues">/venues</a><a href="#builders">/builders</a><a href="#spec">/spec</a><a href="#demo">/demo</a>
+      <a href="#how">/how</a><a href="#venues">/shops</a><a href="#builders">/builders</a><a href="#spec">/spec</a><a href="#demo">/demo</a>
     </nav>
     <a class="pill" href="/connect">Integrate ↗</a>
   </div>
@@ -31,7 +31,7 @@
     <div class="hero-grid">
       <div class="hero-copy">
         <h1 class="display hero-title"><span>Agents can pay.</span><span>Now they can</span><span><em>pick up.</em></span></h1>
-        <p class="lede">An AI agent orders and pays at a real shop. The person walks in and shows a signed QR. Venues connect their Square and keep their POS: agent orders land on the counter screen like any other, and the money goes straight to them.</p>
+        <p class="lede">An AI agent orders and pays, and the person collects with a signed QR: at a shop counter, a café, or from a courier at the door. Shops connect their Square and keep their POS: agent orders land on the counter screen like any other, and the money goes straight to them.</p>
         <div class="cta">
           <a class="btn btn-lime" href="/connect">Integrate ↗</a>
           <a class="btn btn-outline" href="#demo">Run the live demo</a>
@@ -90,12 +90,29 @@
     </div>
   </section>
 
+  <!-- ---------- where it works: anything handed over in person ---------- -->
+  <section id="uses" class="frame band">
+    <div class="band-head">
+      <p class="idx mono">02 / where it works</p>
+      <h2 class="display">Anything that changes hands</h2>
+      <p class="sub">If something is handed over in person, an agent can order and pay for it, and the pass proves who got it.</p>
+    </div>
+    <div class="uses">
+      <div class="use"><b class="display">Retail</b><p>Click and collect at the counter. The order waits until the right person shows the QR.</p><span class="tag">click &amp; collect</span></div>
+      <div class="use"><b class="display">Cafés &amp; restaurants</b><p>Order ahead and skip the queue. Orders land on the Square screens staff already use.</p><span class="tag">order ahead</span></div>
+      <div class="use"><b class="display">Deliveries</b><p>The courier scans the customer's QR at the door: proof the right person got it.</p><span class="tag">proof of delivery</span></div>
+      <div class="use"><b class="display">Events</b><p>Merch and drinks paid for before the person reaches the stall or the bar, collected with a scan.</p><span class="tag">stalls &amp; bars</span></div>
+      <div class="use"><b class="display">Lockers &amp; kiosks</b><p>The pass checks offline against the shop's keys, so a locker or kiosk can hand over with no network.</p><span class="tag">offline check</span></div>
+      <div class="use"><b class="display">Rentals &amp; repairs</b><p>Pick up a repaired phone or a hire bike. The pass shows who collected it and when.</p><span class="tag">pickups &amp; returns</span></div>
+    </div>
+  </section>
+
   <!-- ---------- how: sticky lime rail + scrolling steps ---------- -->
   <section id="how" class="frame band how">
     <div class="how-rail">
       <div class="how-sticky">
-        <p class="idx mono">02 / how it works</p>
-        <h2 class="display">From “get me a coffee” to the counter</h2>
+        <p class="idx mono">03 / how it works</p>
+        <h2 class="display">From an agent's order to the hand-over</h2>
         <ol class="how-nav mono" id="howNav">
           <li data-step="1"><span>01</span>Find</li>
           <li data-step="2"><span>02</span>Order</li>
@@ -109,8 +126,8 @@
       <article class="step" data-step="1">
         <span class="step-n display">01</span>
         <h3>Find</h3>
-        <p>Someone asks their agent for a flat white near work. The agent searches the directory for shops near them that sell it, which are open now, and how each one takes payment.</p>
-        <code class="wire">find_shops · GET /directory/v1/shops?q=flat+white&amp;lat=…&amp;lng=…</code>
+        <p>Someone asks their agent for a phone charger, a sourdough loaf or a flat white near work. The agent searches the directory for shops near them that sell it, which are open now, and how each one takes payment.</p>
+        <code class="wire">find_shops · GET /directory/v1/shops?q=charger&amp;lat=…&amp;lng=…</code>
       </article>
       <article class="step" data-step="2">
         <span class="step-n display">02</span>
@@ -142,7 +159,7 @@
   <!-- ---------- venues: bento ---------- -->
   <section id="venues" class="frame band">
     <div class="band-head">
-      <p class="idx mono">03 / for venues</p>
+      <p class="idx mono">04 / for shops</p>
       <h2 class="display">Keep your POS. Take orders from every agent.</h2>
     </div>
     <div class="bento">
@@ -174,7 +191,7 @@
       </div>
       <div class="cell cell-group">
         <h3>Group orders</h3>
-        <p>One code for the coffee run. Everyone's agent pays its own share, and the counter gets one order.</p>
+        <p>One code for the coffee run or the team lunch. Everyone's agent pays its own share, and the counter gets one order.</p>
         <ul class="shares mono" aria-hidden="true">
           <li><span>Sam · flat white</span><b>paid</b></li>
           <li><span>Alex · long black</span><b>paid</b></li>
@@ -196,7 +213,7 @@
   <!-- ---------- builders: tabbed console ---------- -->
   <section id="builders" class="frame band builders">
     <div class="builders-copy">
-      <p class="idx mono">04 / for builders</p>
+      <p class="idx mono">05 / for builders</p>
       <h2 class="display">One server, every way to order</h2>
       <ul class="checks">
         <li><b>An MCP server.</b> Any agent can find shops, order, pay, join a group order and fetch the pass. Ours is hosted at <code>/mcp</code>.</li>
@@ -271,7 +288,7 @@ app.route(<span class="s">"/"</span>, pickup.app);</code></pre>
   <section id="spec" class="frame band">
     <div class="spec-ticket">
       <div class="spec-copy">
-        <p class="idx mono">05 / the pass</p>
+        <p class="idx mono">06 / the pass</p>
         <h2 class="display">An open pickup pass</h2>
         <p class="sub">A small signed token any facilitator, wallet or platform can issue and check. It carries no names, items or amounts, so a leaked screenshot gives nothing away.</p>
         <ul class="checks">
@@ -306,7 +323,7 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS</span></code></pre>
   <!-- ---------- standards wall ---------- -->
   <section id="standards" class="frame band">
     <div class="band-head">
-      <p class="idx mono">06 / standards</p>
+      <p class="idx mono">07 / standards</p>
       <h2 class="display">Speaks every agent checkout</h2>
     </div>
     <div class="wall">
@@ -322,7 +339,7 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS</span></code></pre>
   <!-- ---------- demo ---------- -->
   <section id="demo" class="frame band">
     <div class="band-head">
-      <p class="idx mono">07 / demo</p>
+      <p class="idx mono">08 / demo</p>
       <h2 class="display">Run an order end to end</h2>
       <p class="sub">A pretend café on the real server. Pay with the test button and no money moves, or try the x402 link and see the real 402 quote. Then scan the pass the way staff would.</p>
     </div>
@@ -370,10 +387,10 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS</span></code></pre>
   <!-- ---------- start here: one row per audience ---------- -->
   <section id="who" class="frame band">
     <div class="band-head">
-      <p class="idx mono">08 / start here</p>
+      <p class="idx mono">09 / start here</p>
     </div>
     <div class="rows">
-      <a class="row" href="/connect"><b class="display">Venues</b><span>Integrate your POS, pick a location and choose how agents pay. Test mode first if you like.</span><i aria-hidden="true">↗</i></a>
+      <a class="row" href="/connect"><b class="display">Shops &amp; venues</b><span>Integrate your POS, pick a location and choose how agents pay. Test mode first if you like.</span><i aria-hidden="true">↗</i></a>
       <a class="row" href="#builders"><b class="display">Agent builders</b><span>Add the MCP server, or call the order address straight from any x402 client.</span><i aria-hidden="true">↓</i></a>
       <a class="row" href="/wallet"><b class="display">People</b><span>Give your assistant a wallet you fund and limit, for pickup orders and any other x402 service.</span><i aria-hidden="true">↗</i></a>
       <a class="row" href="#partners"><b class="display">Payment companies</b><span>Facilitators, wallets and ordering platforms: issue and check passes in your own stack.</span><i aria-hidden="true">↓</i></a>
@@ -382,7 +399,7 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS</span></code></pre>
 
   <!-- ---------- pricing: one statement ---------- -->
   <section id="pricing" class="frame band pricing">
-    <p class="idx mono">09 / pricing</p>
+    <p class="idx mono">10 / pricing</p>
     <p class="display price-line">Free during <em>the pilot.</em></p>
     <div class="price-notes">
       <p>No fees on orders while we pilot, and at least 30 days' notice before any fee. When fees come, they'll be per completed pickup, never on no-shows.</p>
@@ -393,7 +410,7 @@ GET /.well-known/collect-keys.json  <span class="c">→ JWKS</span></code></pre>
   <!-- ---------- partners ---------- -->
   <section id="partners" class="frame band waitlist">
     <div>
-      <p class="idx mono">10 / partners</p>
+      <p class="idx mono">11 / partners</p>
       <h2 class="display">Build with us</h2>
       <p class="sub">We're looking for a few facilitators, wallets and ordering platforms to build with first. Tell us what you'd plug it into.</p>
     </div>
