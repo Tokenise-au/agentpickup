@@ -26,7 +26,7 @@ import { mountConnect } from "./connect.js";
 import type { ConnectorContext, ShopProfile } from "./connectors/types.js";
 import { paymentSummary, renderPassEmail, type PassEmailKind } from "./mail.js";
 import { formatMoney, formatTime } from "./format.js";
-import { messagePage, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
+import { messagePage, page, passPage, scannerPage, staffLoginPage, thanksPage } from "./pages.js";
 import { stripeCardRail } from "./rails/stripe.js";
 import {
   X402_ORDER_ROUTE,
@@ -150,6 +150,8 @@ export function createCollect(config: CollectConfig) {
   const currency = (config.currency ?? "usd").toLowerCase();
   const windowMs = (config.collectWindowMinutes ?? 24 * 60) * 60_000;
   const card = config.payments.card ? stripeCardRail(config.payments.card) : null;
+  // A POS that takes the card itself (the Square connector with cardPayments): the "square" rail.
+  const posCards = (config.connectors ?? []).find((c) => c.cardPayments) ?? null;
   const x402 = config.payments.x402 ?? null;
   // Agent checkout protocols charge Stripe Shared Payment Tokens in the merchant's account.
   const ucpStripe = config.ucp?.stripe ? sptClient(config.ucp.stripe) : null;
@@ -290,11 +292,13 @@ export function createCollect(config: CollectConfig) {
     if (rail === "ucp" && !config.ucp) throw new InputError("UCP isn't set up.");
     if (rail === "acp" && !config.acp) throw new InputError("ACP isn't set up.");
     if (rail === "test" && !config.payments.test) throw new InputError("Test payments are off.");
-    if (!["card", "x402", "mpp", "ucp", "acp", "test"].includes(rail)) throw new InputError("Unknown payment method.");
+    if (rail === "square" && !posCards) throw new InputError("Card payments through Square aren't set up.");
+    if (!["card", "x402", "mpp", "ucp", "acp", "test", "square"].includes(rail)) throw new InputError("Unknown payment method.");
 
     const email = input.email?.trim() || null;
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new InputError("That email doesn't look right.");
-    if (!email && rail !== "card" && !opts.emailOptional) throw new InputError("An email is needed to send the pickup QR.");
+    // Card checkouts ask for the email on their own page.
+    if (!email && rail !== "card" && rail !== "square" && !opts.emailOptional) throw new InputError("An email is needed to send the pickup QR.");
 
     await menuReady;
     const items: OrderItem[] = input.items.map(({ id, qty }) => {
@@ -324,7 +328,7 @@ export function createCollect(config: CollectConfig) {
       status: "awaiting_payment",
       rail,
       captureMode:
-        rail === "x402" || rail === "mpp" || rail === "ucp" || rail === "acp"
+        rail === "x402" || rail === "mpp" || rail === "ucp" || rail === "acp" || rail === "square"
           ? "charge"
           : rail === "card"
             ? (config.payments.card?.captureMode ?? "hold")
@@ -430,6 +434,7 @@ export function createCollect(config: CollectConfig) {
 
   function paymentLabel(o: Order): string {
     if (o.rail === "card") return o.captureMode === "hold" ? "Card on hold: taken at handover" : "Paid by card";
+    if (o.rail === "square") return "Paid by card through Square";
     if (o.rail === "x402") return "Paid by agent in USDC";
     if (o.rail === "mpp") return "Paid by agent through Stripe (MPP)";
     if (o.rail === "ucp") return "Paid through an agent checkout (UCP)";
@@ -486,7 +491,7 @@ export function createCollect(config: CollectConfig) {
         ? `${amount} group order: each person paid their own share.`
       : claimed.rail === "x402" || claimed.rail === "mpp" || claimed.rail === "ucp" || claimed.rail === "acp"
         ? `${amount} was paid by agent at order time.`
-        : claimed.rail === "card"
+        : claimed.rail === "card" || claimed.rail === "square"
           ? `${amount} was paid by card at order time.`
           : `${amount} test order: no money moved.`;
     return { ok: true as const, order: claimed, message };
@@ -528,6 +533,13 @@ export function createCollect(config: CollectConfig) {
           if (config.noShowPolicy === "keep") outcome = "kept";
           else {
             await mpp.refund(o.paymentRef);
+            outcome = "refunded";
+          }
+        } else if (o.rail === "square" && posCards) {
+          // Charged at order time on the shop's Square; given back through it.
+          if (config.noShowPolicy === "keep") outcome = "kept";
+          else {
+            await posCards.cardPayments!.refund(o, ctxFor(posCards.name));
             outcome = "refunded";
           }
         }
@@ -602,10 +614,12 @@ export function createCollect(config: CollectConfig) {
   const require = createRequire(import.meta.url);
   const jsqr = readFileSync(require.resolve("jsqr/dist/jsQR.js"));
   const scannerJs = readFileSync(new URL("../static/scanner.js", import.meta.url));
+  const squarePayJs = readFileSync(new URL("../static/square-pay.js", import.meta.url));
   const asset = (body: Buffer) => (c: Context) =>
     c.body(new Uint8Array(body), 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "public, max-age=3600" });
   app.get("/collect-assets/jsQR.js", asset(jsqr));
   app.get("/collect-assets/scanner.js", asset(scannerJs));
+  app.get("/collect-assets/square-pay.js", asset(squarePayJs));
   app.get("/.well-known/collect-keys.json", (c) => c.json(toJwks([key])));
   // This shop's open listing, for any directory to register (see listing.ts).
   app.get("/.well-known/agentpickup.json", async (c) => c.json(listingDocument(await listing())));
@@ -658,6 +672,8 @@ export function createCollect(config: CollectConfig) {
     currency,
     getOrder: async (id) => await store.getOrder(id),
     markReady: (id) => markReady(id),
+    markPaid: (id, payment) => markPaid(id, payment),
+    page: (o) => page({ merchant, ...o, root: new URL(base).pathname.replace(/\/$/, "") }),
     setCatalog,
     link: async (orderId, externalId, data = {}) => {
       await store.putDoc(`link:${name}`, orderId, { ...data, externalId });
@@ -785,6 +801,8 @@ export function createCollect(config: CollectConfig) {
         x402: x402 ? { network: x402.network ?? "eip155:84532", payTo: x402.payTo } : null,
         mpp: mpp ? { methods: ["stripe"], intent: "charge", currency } : null,
         test: Boolean(config.payments.test),
+        // Cards on the shop's Square: the "square" rail, paid by the person on a checkout link.
+        square: posCards ? { live: posCards.cardPayments!.live } : null,
       },
     });
   });
@@ -813,6 +831,9 @@ export function createCollect(config: CollectConfig) {
         expiresAt: order.collectBy,
       });
       return c.json({ order: publicOrder(order), next: { type: "redirect", url: checkout.url } }, 201);
+    }
+    if (order.rail === "square") {
+      return c.json({ order: publicOrder(order), next: { type: "redirect", url: posCards!.cardPayments!.checkoutUrl(order, ctxFor(posCards!.name)) } }, 201);
     }
     if (order.rail === "x402") {
       return c.json(
@@ -879,7 +900,9 @@ export function createCollect(config: CollectConfig) {
   app.get("/api/orders/:id", async (c) => {
     const order = await store.getOrder(c.req.param("id"));
     if (!order) throw new InputError("Order not found.", 404);
-    return c.json({ order: publicOrder(order) });
+    // An unpaid card order through the POS: where the person pays it.
+    const checkoutUrl = order.rail === "square" && order.status === "awaiting_payment" && posCards ? posCards.cardPayments!.checkoutUrl(order, ctxFor(posCards.name)) : undefined;
+    return c.json({ order: publicOrder(order), ...(checkoutUrl ? { checkoutUrl } : {}) });
   });
 
   if (config.exposeEmailPreview) {
@@ -1245,7 +1268,8 @@ export function createCollect(config: CollectConfig) {
         currency,
         timeZone,
         items: menu,
-        payments: { x402: x402 ? { network: x402.network ?? "eip155:84532" } : null, card: Boolean(card), test: Boolean(config.payments.test) },
+        // Cards through a POS count as real money only outside its sandbox.
+        payments: { x402: x402 ? { network: x402.network ?? "eip155:84532" } : null, card: Boolean(card || posCards?.cardPayments?.live), test: Boolean(config.payments.test) },
       }),
       order: { via: "agentpickup" },
     };

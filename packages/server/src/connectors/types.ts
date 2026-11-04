@@ -12,6 +12,10 @@ export interface ConnectorContext {
   getOrder(id: string): Promise<Order | null>;
   /** Mark a paid order ready to collect, as staff do; the customer gets the "ready" email. */
   markReady(orderId: string): Promise<unknown>;
+  /** A connector that took the payment itself (cardPayments) records it; the receipt email follows. */
+  markPaid(orderId: string, payment: { paymentRef: string; email?: string | null; meta?: Record<string, unknown> }): Promise<Order>;
+  /** A page in the shop's name, colours and logo, for a connector's own screens (a checkout page). */
+  page(o: { title: string; body: string; scripts?: string[]; inlineScript?: string }): string;
   /** Replace the menu. Orders already placed keep the prices they were placed at. */
   setCatalog(items: CatalogItem[]): Promise<void>;
   /** Remember which platform record an order became, in both directions. */
@@ -45,4 +49,16 @@ export interface PickupConnector {
   onEvent?(event: CollectEvent, order: Order, ctx: ConnectorContext): Promise<void>;
   /** Routes the platform calls back on, such as a webhook receiver, under /connect/<name>/. */
   routes?(app: Hono, ctx: ConnectorContext): void;
+  /**
+   * The platform takes card payments itself (the "square" rail): the buyer pays on the connector's checkout
+   * page, the money lands in the venue's own account there, and a no-show is refunded through it.
+   */
+  cardPayments?: {
+    /** Real money: false in a sandbox. */
+    live: boolean;
+    /** Where the buyer pays for this order. */
+    checkoutUrl(order: Order, ctx: ConnectorContext): string;
+    /** Give an uncollected order's money back. */
+    refund(order: Order, ctx: ConnectorContext): Promise<void>;
+  };
 }

@@ -84,8 +84,14 @@ at the Worker's next five-minute check.
 
 ## Phase 4: cards and Stripe agent payments (weeks 3-4)
 
+Cards through the shop's own Square were built first (2026-11-04), before any more marketing: every shop that
+signs up is on Square, so they take cards with nothing new to set up. Stripe Connect below adds the agent-native
+card checkouts (ChatGPT, Google, Stripe's MPP).
+
 | What | Who | Size |
 |---|---|---|
+| Cards and Google Pay through the shop's Square: a checkout page, charged on the Square order, refunded if not collected (built 2026-11-04) | Claude | done |
+| Apple Pay on the Square checkout (register agentpickup.app's domain with Square) | Claude | 1-2 h |
 | Confirm Stripe Shared Payment Tokens charge on a connected seller's account | Claude | 1 h, before building |
 | Connect with Stripe in the wizard: card checkout held until pickup, and MPP, ACP (ChatGPT) and UCP (Google) agent payments, all on the seller's own Stripe | Claude | 4-6 h |
 | Our fee: an application fee per collected order, taken by Stripe at payment | Dave decides the price | |

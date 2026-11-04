@@ -2,7 +2,8 @@
  * How the order was paid: card checkout, x402, MPP, or through an agent checkout protocol (UCP, ACP). "group" is a
  * group order's combined order: each person paid their own share, as an order of their own.
  */
-export type PaymentRail = "card" | "x402" | "mpp" | "ucp" | "acp" | "test" | "group";
+/** "square": a card paid on the shop's Square, through its connector's checkout page. */
+export type PaymentRail = "card" | "x402" | "mpp" | "ucp" | "acp" | "test" | "group" | "square";
 
 /**
  * awaiting_payment → paid → (ready) → collected

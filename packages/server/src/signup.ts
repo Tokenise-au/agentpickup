@@ -48,6 +48,8 @@ export interface SellerVenue {
   /** What customers see now: the seller's own settings, with Square's logo and colour filling the gaps. */
   shown: { name: string; logoUrl: string | null; brandColor: string | null };
   wallet: string | null;
+  /** Cards through the seller's Square. */
+  cards: boolean;
   test: boolean;
   listed: boolean;
   settings: VenueInput;
@@ -322,23 +324,24 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     if (!s || !venue) return c.redirect("/seller");
     return c.html(
       page(
-        "How agents pay you",
-        `<p class="lede">Agents pay in USDC, a digital US dollar, straight to your wallet on ${esc(NETWORKS[network] ?? network)}.
-        ${esc(platform)} never holds the money.${
-          venue.currency === "usd"
-            ? ""
-            : deps.convertsCurrency
-              ? ` Your ${esc(venue.currency.toUpperCase())} prices are converted to US dollars at the day's exchange rate when an agent orders.`
-              : ` USDC can't be taken for ${esc(venue.currency.toUpperCase())} prices here yet, so test mode stays on for now.`
-        }</p>
+        "How you get paid",
+        `<p class="lede">The money goes straight to you: ${esc(platform)} never holds it.</p>
         <form method="post" action="/connect/payments?venue=${encodeURIComponent(venue.slug)}" class="stack">
           <input type="hidden" name="csrf" value="${csrfFor(s)}">
-          <label>Your wallet address <span class="muted">(optional for now)</span>
+          <label class="check"><input type="checkbox" name="cards" value="1" checked> <span><b>Cards and Google Pay, through your Square.</b> The customer pays on a checkout page
+            and the money lands in your Square account, at Square's usual card fees. The order shows on your Square screens as paid by card.</span></label>
+          <label>USDC wallet address <span class="muted">(optional)</span>
             <input name="wallet" placeholder="0x…" spellcheck="false" autocomplete="off" maxlength="42" value="${esc(venue.wallet ?? "")}"></label>
-          <label class="check"><input type="checkbox" name="test" value="1" checked> Keep test mode on, so you can try orders with no real money</label>
+          <p class="muted small">Agents can also pay in USDC, a digital US dollar, straight to your wallet on ${esc(NETWORKS[network] ?? network)}.${
+            venue.currency === "usd"
+              ? ""
+              : deps.convertsCurrency
+                ? ` Your ${esc(venue.currency.toUpperCase())} prices are converted to US dollars at the day's exchange rate when an agent orders.`
+                : ` USDC can't be taken for ${esc(venue.currency.toUpperCase())} prices here yet.`
+          }</p>
+          <label class="check"><input type="checkbox" name="test" value="1" checked> Keep test mode on, so you can try orders with no real money first</label>
           <button class="btn" type="submit">Continue</button>
-        </form>
-        <p class="muted small">Card payments through your own Stripe are coming next.</p>`,
+        </form>`,
         3,
       ),
     );
@@ -350,7 +353,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     const form = await c.req.parseBody();
     const venue = s && csrfOk(s, form.csrf) ? await owns(s, slug) : null;
     if (!s || !venue) return c.redirect("/seller");
-    const payments = paymentsChange(venue, String(form.wallet ?? ""), form.test === "1");
+    const payments = paymentsChange(venue, String(form.wallet ?? ""), form.test === "1", form.cards === "1");
     if ("problem" in payments) {
       return c.html(page("Check your wallet", `<p class="lede">${esc(payments.problem)}</p><p><a class="btn" href="/connect/payments?venue=${encodeURIComponent(slug)}">Back</a></p>`, 3), 400);
     }
@@ -358,8 +361,11 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     return c.redirect(`/connect/done?venue=${encodeURIComponent(slug)}`);
   });
 
-  /** A venue's wallet and test mode, checked. With no wallet, test mode stays on so the venue can still take orders. */
-  function paymentsChange(venue: SellerVenue, walletInput: string, test: boolean): { problem: string } | { apply: (v: VenueInput) => VenueInput } {
+  /**
+   * A venue's cards, wallet and test mode, checked. With no real way to pay (no cards, no wallet), test mode
+   * stays on so the venue can still take orders.
+   */
+  function paymentsChange(venue: SellerVenue, walletInput: string, test: boolean, cards: boolean): { problem: string } | { apply: (v: VenueInput) => VenueInput } {
     const wallet = walletInput.trim();
     if (wallet && !isAddress(wallet)) return { problem: "That isn't a wallet address. It starts with 0x and has 40 more letters and digits." };
     if (wallet && venue.currency !== "usd" && !deps.convertsCurrency) {
@@ -370,9 +376,10 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
         ...v,
         payments: {
           ...v.payments,
-          test: test || !wallet,
+          test: test || (!wallet && !(cards && v.square)),
           x402: wallet ? { payTo: wallet, network, facilitatorUrl: config.x402?.facilitatorUrl } : undefined,
         },
+        ...(v.square ? { square: { ...v.square, cards } } : {}),
       }),
     };
   }
@@ -401,7 +408,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
         <section class="card">
           <h2>How orders work</h2>
           <ol>
-            <li>An agent orders and pays. The order appears in Square as a pickup order, already paid.</li>
+            <li>An agent orders. The customer pays by card through your Square, or the agent pays in USDC, and the order appears in Square as a paid pickup order.</li>
             <li>Mark it ready in Square as usual. The customer gets their pickup QR by email.</li>
             <li>Scan the QR on the staff page to hand it over. Square closes the order.</li>
           </ol>
@@ -461,6 +468,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
             <label>Shop name <input type="text" name="name" maxlength="80" required value="${esc(v.name)}" autocomplete="organization"></label>
             <input type="hidden" name="brandColorWas" value="${esc(colour)}">
             <label>Brand colour <input type="color" name="brandColor" value="${esc(colour)}"></label>
+            <label class="check"><input type="checkbox" name="cards" value="1"${v.cards ? " checked" : ""}> Cards and Google Pay through your Square</label>
             <label>Wallet for USDC <input name="wallet" placeholder="0x…" spellcheck="false" autocomplete="off" maxlength="42" value="${esc(v.wallet ?? "")}"></label>
             <label class="check"><input type="checkbox" name="test" value="1"${v.test ? " checked" : ""}> Test mode</label>
             <label class="check"><input type="checkbox" name="listed" value="1"${v.listed ? " checked" : ""}> Show me in the agent directory</label>
@@ -498,7 +506,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     // An untouched colour box still submits; keep following Square's colour until the seller picks one.
     const picked = /^#[0-9a-f]{6}$/.test(colour) && (venue.brandColor !== null || colour !== String(form.brandColorWas ?? "").toLowerCase());
     const name = String(form.name ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
-    const payments = paymentsChange(venue, String(form.wallet ?? ""), form.test === "1");
+    const payments = paymentsChange(venue, String(form.wallet ?? ""), form.test === "1", form.cards === "1");
     if ("problem" in payments) return c.html(await sellerPage(s, null, undefined, { slug, text: payments.problem }), 400);
     await deps.patchVenue(slug, (v) => ({
       ...payments.apply(v),

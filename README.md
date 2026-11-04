@@ -228,7 +228,15 @@ const pickup = createCollect({
   phone, time zone and map position, and the brand colour from the seller's online checkout branding (unless
   it's still Square's blue). The shop's own settings win; Square fills what they leave out. It refreshes hourly and on `POST /connect/v1/catalog/sync`, and the last
   copy is kept, so a Square outage at start doesn't blank it. `syncProfile: false` turns it off.
-- Check your setup against a sandbox: `node --conditions=source --import tsx scripts/square-sandbox-check.ts`.
+- **Cards through Square** (`cardPayments: { applicationId }`, rail `"square"`): the buyer pays by card or Google
+  Pay on a checkout page at `/connect/square/pay/:orderId`, with Square's Web Payments SDK. The charge is made on
+  the Square order itself, so it shows on the venue's screens as paid by card and the money lands in the seller's
+  Square account. Square only shows paid orders on its screens, so cards are charged when the order is placed
+  (not held), and an uncollected order is refunded through Square (or kept, with `noShowPolicy: "keep"`).
+  Declines come back in plain words. `POST /api/orders` with `rail: "square"` answers `next.type: "redirect"` to
+  the checkout, and `GET /api/orders/:id` gives its `checkoutUrl` while unpaid. Needs the PAYMENTS_WRITE scope.
+- Check your setup against a sandbox: `node --conditions=source --import tsx scripts/square-sandbox-check.ts`, and
+  card payments with `scripts/square-card-check.ts` (Square's test cards: declined, approved, then a no-show refund).
 
 **Any other platform** uses the connector API, so it plugs in without a bespoke build. Set
 `connect: { apiKeys: [...] }` (one key per platform) and call it with `Authorization: Bearer <key>`:
@@ -355,7 +363,8 @@ const host = createVenueHost({
    tokens are sealed with the venue's other secrets and renewed once they're a week old, as Square asks.
 3. **Choose the location.** The venue is created from it, with the menu, logo, address and hours from Square, a
    staff key, and test payments.
-4. **Payments.** A USDC wallet, or test mode for now.
+4. **Payments.** Cards and Google Pay through their Square (ticked by default), an optional USDC wallet, and test
+   mode. A venue can go live on cards alone; with neither cards nor a wallet, test mode stays on.
 5. **Done.** The staff key, shown once, and how orders flow: they appear in Square, staff mark them ready
    there, and scan the customer's QR to hand over.
 

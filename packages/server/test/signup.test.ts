@@ -315,6 +315,37 @@ test("seller page: previews the pass in the shop's branding, renames the shop, a
   host.stop();
 });
 
+test("signup: with cards through Square and no wallet, a venue can go live, and buyers pay on its checkout page", async () => {
+  const { host } = setup();
+  const b = browser(host.app);
+  const paymentsPage = await (async () => {
+    await signIn(b);
+    const csrf = csrfIn(await (await b.go("/connect/location")).text());
+    const created = await b.form("/connect/location", { locationId: "L1", csrf });
+    return { path: created.headers.get("location")!, csrf };
+  })();
+  assert.match(await (await b.go(paymentsPage.path)).text(), /name="cards" value="1" checked/, "cards are offered first, ticked");
+  await b.form(paymentsPage.path, { csrf: paymentsPage.csrf, cards: "1", wallet: "" });
+  const slug = new URL(paymentsPage.path, HOST).searchParams.get("venue")!;
+  const catalog = (await (await host.app.request(`${HOST}/v/${slug}/api/catalog`)).json()) as { payments: { test: boolean; x402: unknown; square: { live: boolean } | null } };
+  assert.deepEqual([catalog.payments.test, catalog.payments.x402, catalog.payments.square], [false, null, { live: false }], "live on cards alone, in Square's sandbox");
+
+  const res = await host.app.request(`${HOST}/v/${slug}/api/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: [{ id: "V1", qty: 1 }], rail: "square" }),
+  });
+  const { order, next } = (await res.json()) as { order: { id: string }; next: { url: string } };
+  assert.equal(next.url, `${HOST}/v/${slug}/connect/square/pay/${order.id}`);
+  const page = await (await host.app.request(next.url)).text();
+  assert.match(page, new RegExp(`"appId":"${APP_ID}"`), "the sign-up app's card form, for a venue in the same environment");
+  assert.match(page, /<title>Pay for your order · Corner Café<\/title>/);
+
+  const seller = await (await b.go("/seller")).text();
+  assert.match(seller, /name="cards" value="1" checked/);
+  host.stop();
+});
+
 test("seller page: only the seller who connected a venue can change it, and disconnecting the last one ends Square access", async () => {
   const { host, square } = setup();
   const b = browser(host.app);

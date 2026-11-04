@@ -61,7 +61,7 @@ tr.total td{font-weight:700;border-bottom:0}
 .result{border-radius:16px;padding:22px;text-align:center}
 .result.ok{background:var(--okbg);color:var(--ok)} .result.bad{background:var(--badbg);color:var(--bad)}
 .result .big{font-size:44px;line-height:1}
-input[type=text],input[type=password]{width:100%;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff}
+input[type=text],input[type=password],input[type=email]{width:100%;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff}
 .row{display:flex;gap:10px;align-items:center}
 .row>*{flex:1}
 video{width:100%;border-radius:14px;background:#000;aspect-ratio:1/1;object-fit:cover}

@@ -48,6 +48,10 @@ export interface VenueInput {
     tokenExpiresAt?: number;
     /** Set when the seller disconnected agentPickup in Square; the venue keeps its last menu. */
     revokedAt?: number;
+    /** Take cards through the seller's Square (the "square" rail): buyers pay on a checkout page. */
+    cards?: boolean;
+    /** The Square application whose card form the checkout uses. Default: the sign-up app's, in the same environment. */
+    applicationId?: string;
   } | null;
   /** The Square seller who connected the venue, so they can manage it at /seller. */
   owner?: { squareMerchantId?: string };
@@ -73,7 +77,7 @@ interface VenueRecord {
   slug: string;
   settings: Omit<VenueInput, "staffKey"> & {
     payments?: { test?: boolean; x402?: { payTo: string; network?: `${string}:${string}`; facilitatorUrl?: string }; card?: { captureMode?: "hold" | "charge" } };
-    square?: { locationId: string; environment?: "sandbox" | "production"; merchantId?: string; tokenExpiresAt?: number; revokedAt?: number };
+    square?: { locationId: string; environment?: "sandbox" | "production"; merchantId?: string; tokenExpiresAt?: number; revokedAt?: number; cards?: boolean; applicationId?: string };
     webhook?: { url: string };
   };
   sealed: string;
@@ -247,6 +251,8 @@ function parseVenue(body: unknown): { settings: VenueRecord["settings"]; secrets
             ...(typeof v.square.merchantId === "string" ? { merchantId: v.square.merchantId } : {}),
             ...(Number.isFinite(v.square.tokenExpiresAt) ? { tokenExpiresAt: v.square.tokenExpiresAt } : {}),
             ...(Number.isFinite(v.square.revokedAt) ? { revokedAt: v.square.revokedAt } : {}),
+            ...(v.square.cards ? { cards: true } : {}),
+            ...(typeof v.square.applicationId === "string" && v.square.applicationId ? { applicationId: v.square.applicationId } : {}),
           },
         }
       : {}),
@@ -337,6 +343,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
                 locationId: s.square.locationId,
                 environment: s.square.environment,
                 webhookSignatureKey: secrets.squareWebhookKey,
+                ...(s.square.cards && cardAppFor(s.square) ? { cardPayments: { applicationId: cardAppFor(s.square)! } } : {}),
                 fetch: cfg.fetch,
               }),
             ]
@@ -359,6 +366,13 @@ export function createVenueHost(cfg: VenueHostConfig) {
           }
         : {}),
     });
+  }
+
+  /** The Square application for a venue's card form: its own, or the sign-up app's when the environments match. */
+  function cardAppFor(sq: { environment?: "sandbox" | "production"; applicationId?: string }): string | null {
+    if (sq.applicationId) return sq.applicationId;
+    const app = cfg.signup?.square;
+    return app && (app.environment ?? "sandbox") === (sq.environment ?? "sandbox") ? app.applicationId : null;
   }
 
   function start(record: VenueRecord) {
@@ -431,6 +445,7 @@ export function createVenueHost(cfg: VenueHostConfig) {
       brandColor: s.merchant.brandColor ?? null,
       shown: { name: shown?.name ?? s.merchant.name, logoUrl: shown?.logoUrl ?? s.merchant.logoUrl ?? null, brandColor: shown?.brandColor ?? s.merchant.brandColor ?? null },
       wallet: s.payments?.x402?.payTo ?? null,
+      cards: Boolean(s.square?.cards),
       test: Boolean(s.payments?.test),
       listed: s.listed !== false,
       settings: s as VenueInput,

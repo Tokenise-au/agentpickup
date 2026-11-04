@@ -4,11 +4,14 @@
 // cancel an order once a payment is recorded, so a no-show cancels the pickup, records a refund when the
 // money actually went back, and closes the order. Test orders reach Square at $0 and labelled TEST, so staff
 // see them but the venue's sales and tax don't. The venue's Square location supplies its logo, address,
-// opening hours, contact details and map position.
-import { createHmac, timingSafeEqual } from "node:crypto";
+// opening hours, contact details and map position. With cardPayments, buyers pay by card on a checkout page
+// here: the charge is made on the Square order itself, so it shows on the venue's screens as paid by card,
+// and an uncollected order is refunded through Square.
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Order } from "@agentpickup/core";
 import type { CatalogItem, OpeningPeriod } from "../config.js";
 import { formatHours } from "../directory.js";
+import { esc, formatMoney } from "../format.js";
 import type { ConnectorContext, PickupConnector, ShopProfile } from "./types.js";
 
 export interface SquareConnectorConfig {
@@ -29,11 +32,50 @@ export interface SquareConnectorConfig {
   webhookSignatureKey?: string;
   /** The notification URL exactly as entered in Square, if it differs from <baseUrl>/connect/square/webhook. */
   webhookUrl?: string;
+  /**
+   * Take card payments through the seller's Square (the "square" rail): your Square application's ID, for the
+   * card form on the checkout page. The access token needs PAYMENTS_WRITE.
+   */
+  cardPayments?: { applicationId: string };
   /** For tests, or a proxy. */
   fetch?: typeof fetch;
   /** Square API version header. */
   squareVersion?: string;
 }
+
+/** A Square API error, with Square's error codes (CARD_DECLINED and the like). */
+class SquareApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly codes: string[],
+  ) {
+    super(message);
+  }
+}
+
+/** What a buyer sees when Square turns a card down. */
+const DECLINES: Record<string, string> = {
+  CARD_DECLINED: "Your card was declined. Try another card.",
+  GENERIC_DECLINE: "Your card was declined. Try another card.",
+  INSUFFICIENT_FUNDS: "Your card was declined: not enough funds.",
+  CVV_FAILURE: "The security code didn't match. Check it and try again.",
+  VERIFY_CVV_FAILURE: "The security code didn't match. Check it and try again.",
+  ADDRESS_VERIFICATION_FAILURE: "The postcode didn't match the card. Check it and try again.",
+  VERIFY_AVS_FAILURE: "The postcode didn't match the card. Check it and try again.",
+  INVALID_EXPIRATION: "The expiry date isn't right. Check it and try again.",
+  CARD_EXPIRED: "That card has expired. Try another card.",
+  INVALID_CARD: "Those card details aren't valid. Check them and try again.",
+  INVALID_CARD_DATA: "Those card details aren't valid. Check them and try again.",
+  TRANSACTION_LIMIT: "That's over the card's limit. Try another card.",
+  CARD_NOT_SUPPORTED: "That card can't be used here. Try another card.",
+  CARD_DECLINED_VERIFICATION_REQUIRED: "Your bank needs to confirm this payment. Try again and follow its steps.",
+};
+
+/** Square's amount as the card form wants it: "9.40", or "940" in a currency without cents. */
+const ZERO_DECIMAL = new Set(["JPY"]);
+const amountText = (money: Money) => (ZERO_DECIMAL.has(money.currency) ? String(money.amount) : (money.amount / 100).toFixed(2));
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Money = { amount: number; currency: string };
 type SquareFulfillment = { uid: string; type: string; state: string };
@@ -50,6 +92,7 @@ const DAYS: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, F
 
 type SquareLocation = {
   name?: string;
+  country?: string;
   business_name?: string;
   business_email?: string;
   website_url?: string;
@@ -109,7 +152,7 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     const json = (await res.json().catch(() => ({}))) as { errors?: { code: string; detail?: string }[] };
     if (!res.ok) {
       const detail = json.errors?.map((e) => `${e.code}${e.detail ? `: ${e.detail}` : ""}`).join("; ") ?? "";
-      throw new Error(`Square ${method} ${path.split("?")[0]} answered ${res.status}${detail ? ` (${detail})` : ""}`);
+      throw new SquareApiError(`Square ${method} ${path.split("?")[0]} answered ${res.status}${detail ? ` (${detail})` : ""}`, res.status, json.errors?.map((e) => e.code) ?? []);
     }
     return json as T;
   }
@@ -174,6 +217,39 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
   async function sendOrder(order: Order, ctx: ConnectorContext, test: boolean) {
     if (await ctx.linked(order.id)) return; // already in Square
     const currency = ctx.currency.toUpperCase();
+    const sq = await createSquareOrder(order, ctx, test);
+    if (test) {
+      // Square marks a $0 order paid with no payment at all, so it shows as paid and ready to make.
+      await call("POST", `/v2/orders/${encodeURIComponent(sq.id)}/pay`, { idempotency_key: `agentpickup-pay-${order.id}`, order_version: sq.version });
+      await ctx.link(order.id, sq.id, { fulfillmentUid: sq.fulfillments?.[0]?.uid ?? null, paymentId: null, squareTotal: 0 });
+      return;
+    }
+    // Record the money agentPickup already took, so the order shows as paid in Square POS.
+    const total = sq.total_money ?? { amount: order.totalCents, currency };
+    const payment = await call<{ payment?: { id: string } }>("POST", "/v2/payments", {
+      idempotency_key: `agentpickup-pay-${order.id}`,
+      source_id: "EXTERNAL",
+      amount_money: total,
+      order_id: sq.id,
+      location_id: cfg.locationId,
+      reference_id: order.id,
+      external_details: {
+        type: EXTERNAL_TYPE[order.rail] ?? "EXTERNAL",
+        source: "agentPickup",
+        ...(order.paymentRef ? { source_id: order.paymentRef.slice(0, 255) } : {}),
+      },
+      note: `Paid through agentPickup (${order.rail}).`,
+    });
+    await ctx.link(order.id, sq.id, {
+      fulfillmentUid: sq.fulfillments?.[0]?.uid ?? null,
+      paymentId: payment.payment?.id ?? null,
+      squareTotal: total.amount,
+    });
+  }
+
+  /** The order in Square: a pickup order for the customer's name. Made once per order, however often asked. */
+  async function createSquareOrder(order: Order, ctx: ConnectorContext, test: boolean): Promise<SquareOrder> {
+    const currency = ctx.currency.toUpperCase();
     const created = await call<{ order: SquareOrder }>("POST", "/v2/orders", {
       idempotency_key: `agentpickup-order-${order.id}`,
       order: {
@@ -203,34 +279,7 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
         ],
       },
     });
-    const sq = created.order;
-    if (test) {
-      // Square marks a $0 order paid with no payment at all, so it shows as paid and ready to make.
-      await call("POST", `/v2/orders/${encodeURIComponent(sq.id)}/pay`, { idempotency_key: `agentpickup-pay-${order.id}`, order_version: sq.version });
-      await ctx.link(order.id, sq.id, { fulfillmentUid: sq.fulfillments?.[0]?.uid ?? null, paymentId: null, squareTotal: 0 });
-      return;
-    }
-    // Record the money agentPickup already took, so the order shows as paid in Square POS.
-    const total = sq.total_money ?? { amount: order.totalCents, currency };
-    const payment = await call<{ payment?: { id: string } }>("POST", "/v2/payments", {
-      idempotency_key: `agentpickup-pay-${order.id}`,
-      source_id: "EXTERNAL",
-      amount_money: total,
-      order_id: sq.id,
-      location_id: cfg.locationId,
-      reference_id: order.id,
-      external_details: {
-        type: EXTERNAL_TYPE[order.rail] ?? "EXTERNAL",
-        source: "agentPickup",
-        ...(order.paymentRef ? { source_id: order.paymentRef.slice(0, 255) } : {}),
-      },
-      note: `Paid through agentPickup (${order.rail}).`,
-    });
-    await ctx.link(order.id, sq.id, {
-      fulfillmentUid: sq.fulfillments?.[0]?.uid ?? null,
-      paymentId: payment.payment?.id ?? null,
-      squareTotal: total.amount,
-    });
+    return created.order;
   }
 
   /**
@@ -274,8 +323,108 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     });
   }
 
+  /** GET /connect/square/pay/:id shows the card form; POST charges the card on the Square order. */
+  function mountCheckout(app: Parameters<NonNullable<PickupConnector["routes"]>>[0], ctx: ConnectorContext, applicationId: string) {
+    const sdk = cfg.environment === "production" ? "https://web.squarecdn.com/v1/square.js" : "https://sandbox.web.squarecdn.com/v1/square.js";
+    const thanks = (id: string) => `${ctx.baseUrl}/orders/${encodeURIComponent(id)}/thanks`;
+    const notFoundPage = () => ctx.page({ title: "Order not found", body: `<div class="card"><h1>Order not found</h1><p class="muted">Check the link you were sent.</p></div>` });
+
+    app.get("/pay/:id", async (c) => {
+      const order = await ctx.getOrder(c.req.param("id"));
+      if (!order || order.rail !== "square") return c.html(notFoundPage(), 404);
+      if (order.status !== "awaiting_payment") return c.redirect(thanks(order.id));
+      // Square prices the order, its taxes included, so the page shows exactly what the card is charged.
+      const sq = await createSquareOrder(order, ctx, false);
+      const total = sq.total_money ?? { amount: order.totalCents, currency: ctx.currency.toUpperCase() };
+      const price = formatMoney(total.amount, total.currency.toLowerCase());
+      const items = order.items.map((i) => `${i.qty} × ${esc(i.name)}${i.note ? ` <span class="muted">(${esc(i.note)})</span>` : ""}`).join("<br>");
+      const body = `
+<div class="card">
+  <h1>Pay ${esc(price)}</h1>
+  <p class="muted">${items}</p>
+  ${order.customerEmail ? "" : `<label class="label" for="payEmail" style="display:block;text-align:left;margin-top:14px">Email for your pickup QR</label>
+  <input type="email" id="payEmail" placeholder="you@example.com" autocomplete="email" required style="margin-top:6px">`}
+  <div id="google-pay" style="margin:16px 0 0"></div>
+  <div id="card-container" style="margin-top:14px;min-height:96px"></div>
+  <button class="btn block" id="pay" type="button" disabled>Pay ${esc(price)}</button>
+  <p class="muted" id="payMsg" role="status" style="margin-top:10px">Loading the card form…</p>
+</div>
+<p class="muted" style="text-align:center">The card is charged by this shop, through Square.</p>`;
+      return c.html(
+        ctx.page({
+          title: "Pay for your order",
+          body,
+          scripts: [sdk, `${ctx.baseUrl}/collect-assets/square-pay.js`],
+          inlineScript: `window.__squarePay=${JSON.stringify({
+            appId: applicationId,
+            locationId: cfg.locationId,
+            amount: amountText(total),
+            currency: total.currency,
+            country: await locationCountry().catch(() => "AU"),
+            payUrl: `${ctx.baseUrl}/connect/square/pay/${encodeURIComponent(order.id)}`,
+            needsEmail: !order.customerEmail,
+          })};`,
+        }),
+      );
+    });
+
+    app.post("/pay/:id", async (c) => {
+      const order = await ctx.getOrder(c.req.param("id"));
+      if (!order || order.rail !== "square") return c.json({ error: "Order not found." }, 404);
+      if (order.status !== "awaiting_payment") {
+        return ["paid", "ready", "collected"].includes(order.status) ? c.json({ ok: true, thanksUrl: thanks(order.id) }) : c.json({ error: "This order can't be paid any more." }, 409);
+      }
+      const input = (await c.req.json().catch(() => ({}))) as { sourceId?: unknown; email?: unknown };
+      const sourceId = typeof input.sourceId === "string" ? input.sourceId.trim() : "";
+      if (!sourceId || sourceId.length > 500) return c.json({ error: "The card details didn't come through. Try again." }, 400);
+      const email = (typeof input.email === "string" && input.email.trim()) || order.customerEmail;
+      if (!email || !EMAIL.test(email)) return c.json({ error: "Add your email: your pickup QR goes there." }, 400);
+      const sq = await createSquareOrder(order, ctx, false);
+      let payment: { id: string; status: string; amount_money: Money; card_details?: { card?: { card_brand?: string; last_4?: string } } };
+      try {
+        ({ payment } = await call<{ payment: typeof payment }>("POST", "/v2/payments", {
+          // One try per card token, so a retry with the same card can't charge twice. Square allows 45 characters.
+          idempotency_key: `ap-${order.id}-${createHash("sha256").update(sourceId).digest("hex").slice(0, 16)}`,
+          source_id: sourceId,
+          amount_money: sq.total_money ?? { amount: order.totalCents, currency: ctx.currency.toUpperCase() },
+          order_id: sq.id,
+          location_id: cfg.locationId,
+          reference_id: order.id,
+          autocomplete: true,
+          buyer_email_address: email,
+          note: `agentPickup order ${order.id}`,
+        }));
+      } catch (err) {
+        const declined = err instanceof SquareApiError ? err.codes.map((code) => DECLINES[code]).find(Boolean) : undefined;
+        if (declined) return c.json({ error: declined }, 402);
+        console.error(`[collect] square: card payment for ${order.id} failed:`, err);
+        return c.json({ error: "Square didn't take the payment just now. Nothing was charged; try again in a moment." }, 502);
+      }
+      if (payment.status !== "COMPLETED") return c.json({ error: "The payment didn't complete. Try again or use another card." }, 402);
+      await ctx.link(order.id, sq.id, { fulfillmentUid: sq.fulfillments?.[0]?.uid ?? null, paymentId: payment.id, squareTotal: payment.amount_money.amount });
+      const card = payment.card_details?.card;
+      await ctx.markPaid(order.id, {
+        paymentRef: payment.id,
+        email,
+        meta: { squareOrderId: sq.id, ...(card ? { card: `${card.card_brand ?? "Card"} ${card.last_4 ?? ""}`.trim() } : {}) },
+      });
+      return c.json({ ok: true, thanksUrl: thanks(order.id) });
+    });
+  }
+
+  /** The location's country, for the wallet buttons on the checkout page. */
+  let country: string | null = null;
+  async function locationCountry(): Promise<string> {
+    if (!country) {
+      const { location } = await call<{ location: SquareLocation }>("GET", `/v2/locations/${encodeURIComponent(cfg.locationId)}`);
+      country = location.country ?? "AU";
+    }
+    return country;
+  }
+
   async function fetchProfile(): Promise<ShopProfile> {
     const { location } = await call<{ location: SquareLocation }>("GET", `/v2/locations/${encodeURIComponent(cfg.locationId)}`);
+    if (location.country) country = location.country;
     const brandColor = await checkoutColour().catch(() => undefined);
     return { ...profileFromSquare(location), ...(brandColor ? { brandColor } : {}) };
   }
@@ -304,12 +453,28 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
       else if (event.type === "order.ready") await advance(order, "PREPARED", ctx);
       else if (event.type === "order.collected") await advance(order, "COMPLETED", ctx);
       else if (event.type === "order.expired") {
-        if (RETURNED_AT_EXPIRY.has(String(event.data?.outcome))) await recordRefund(order, ctx);
+        // A card paid through Square was refunded at expiry already (cardPayments.refund).
+        if (RETURNED_AT_EXPIRY.has(String(event.data?.outcome)) && order.rail !== "square") await recordRefund(order, ctx);
         await advance(order, "CANCELED", ctx);
       } else if (event.type === "order.refunded") await recordRefund(order, ctx);
     },
 
+    ...(cfg.cardPayments
+      ? {
+          cardPayments: {
+            live: cfg.environment === "production",
+            checkoutUrl: (order: Order, ctx: ConnectorContext) => `${ctx.baseUrl}/connect/square/pay/${encodeURIComponent(order.id)}`,
+            refund: async (order: Order, ctx: ConnectorContext) => {
+              const link = await ctx.linked(order.id);
+              if (!link?.paymentId) throw new Error(`No Square card payment is recorded for ${order.id}.`);
+              await recordRefund(order, ctx);
+            },
+          },
+        }
+      : {}),
+
     routes(app, ctx) {
+      if (cfg.cardPayments) mountCheckout(app, ctx, cfg.cardPayments.applicationId);
       app.post("/webhook", async (c) => {
         if (!cfg.webhookSignatureKey) return c.json({ error: "Square webhooks aren't set up on this shop." }, 404);
         const raw = await c.req.text();

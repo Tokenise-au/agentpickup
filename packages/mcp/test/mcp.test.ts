@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { createVenueHost, outboxMailer } from "../../server/src/index.js";
+import { createVenueHost, outboxMailer, type PickupConnector } from "../../server/src/index.js";
 import { setupShop, NETWORK, testStore } from "../../server/test/helpers.js";
 import { createMcpHandler, createPickupMcpServer, walletPayer, type PickupMcpOptions } from "../src/index.js";
 
@@ -301,4 +301,39 @@ test("a hosted server finds shops other sites listed, orders from listed agentPi
   assert.match(other.text, /shops its directory lists/);
   host.stop();
   listingHost.stop();
+});
+
+test("a shop that takes cards: the agent orders and gives the user a checkout link, and pay_order hands it back", async () => {
+  const pos: PickupConnector = {
+    name: "pos",
+    cardPayments: { live: false, checkoutUrl: (o, ctx) => `${ctx.baseUrl}/connect/pos/pay/${o.id}`, refund: async () => undefined },
+  };
+  const shop = setupShop({ payments: { test: false }, connectors: [pos] });
+  const server = createPickupMcpServer({ shopUrl: "https://shop.test", fetch: (req) => shop.collect.app.fetch(req) });
+  const client = new Client({ name: "test", version: "1.0.0" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean };
+    const text = res.content[0].text;
+    return { text, json: text.includes("\n\n") ? JSON.parse(text.slice(text.indexOf("\n\n") + 2)) : null, isError: Boolean(res.isError) };
+  };
+
+  const about = await call("get_shop");
+  assert.match(about.text, /Takes cards, paid by the user on a checkout link\./);
+  assert.equal(about.json.cards, true);
+
+  const refused = await call("create_pickup_order", { items: [{ id: "flat-white", qty: 1 }], email: "robin@example.com", payment: "agent" });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /doesn't take agent payments/);
+
+  const created = await call("create_pickup_order", { items: [{ id: "flat-white", qty: 1 }], email: "robin@example.com" });
+  assert.equal(created.isError, false, created.text);
+  assert.equal(created.json.payBy, "card");
+  assert.equal(created.json.checkoutUrl, `https://shop.test/connect/pos/pay/${created.json.orderId}`);
+  assert.match(created.text, /Give the user this link to pay by card/);
+
+  const again = await call("pay_order", { order_id: created.json.orderId });
+  assert.equal(again.json.checkoutUrl, created.json.checkoutUrl);
+  shop.collect.stop();
 });

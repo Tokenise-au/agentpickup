@@ -191,6 +191,8 @@ export function paymentSummary(order: Order, opts: { x402Network?: string } = {}
     }
     case "card":
       return { label: order.captureMode === "hold" ? "Card, held now and charged when you collect" : "Card" };
+    case "square":
+      return { label: "Card, through the shop's Square" };
     case "mpp":
       return { label: "Card or Link, through your agent" };
     case "ucp":

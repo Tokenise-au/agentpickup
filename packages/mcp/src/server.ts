@@ -211,15 +211,21 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
         price: money(i.priceCents, currency),
         description: i.description,
       }));
-      const payments = data.payments as { x402?: { network: string } | null; test?: boolean };
+      const payments = data.payments as { x402?: { network: string } | null; test?: boolean; card?: boolean; square?: { live: boolean } | null };
+      const cards = Boolean(payments.square || payments.card);
+      const ways = [
+        ...(payments.x402 ? [`USDC over x402 on ${payments.x402.network}, paid by the agent`] : []),
+        ...(cards ? ["cards, paid by the user on a checkout link"] : []),
+        ...(payments.test ? ["test payments, with no money moving"] : []),
+      ];
       return reply(
         `${merchant.name}${merchant.location?.name ? `, collect at ${merchant.location.name}` : ""}. ` +
-          (payments.x402
-            ? `Takes USDC over x402 on ${payments.x402.network}.`
-            : payments.test
+          (!ways.length
+            ? "Doesn't take agent payments."
+            : ways.length === 1 && payments.test
               ? "A test shop: orders are marked paid without money moving."
-              : "Doesn't take agent payments."),
-        { shop, merchant: merchant.name, location: merchant.location, currency, items, x402: payments.x402 ?? null, test: Boolean(payments.test) },
+              : `Takes ${ways.join("; ")}.`),
+        { shop, merchant: merchant.name, location: merchant.location, currency, items, x402: payments.x402 ?? null, cards, test: Boolean(payments.test) },
       );
     }),
   );
@@ -230,23 +236,31 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
       title: "Order for pickup",
       description:
         "Create an order to collect in person. Returns the order id and total; pay it with pay_order. " +
-        "The shop emails the pickup QR to `email` once it's paid.",
+        "The shop emails the pickup QR to `email` once it's paid. Where the shop takes cards, `payment: \"card\"` " +
+        "returns a checkout link for the user to pay on instead.",
       inputSchema: {
         items: z
           .array(z.object({ id: z.string().describe("Item id from get_shop"), qty: z.number().int().min(1).max(20) }))
           .min(1),
         email: z.string().email().describe("The user's email. The pickup QR goes here."),
         name: z.string().max(100).optional().describe("Name for the order, shown to staff"),
+        payment: z
+          .enum(["agent", "card"])
+          .optional()
+          .describe("Who pays: agent (USDC over x402, or a test payment at a test shop) or card (the user pays on a checkout link). Default: agent where the shop takes it, else card."),
         ...shopArg,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    guarded(async (args: { items: { id: string; qty: number }[]; email: string; name?: string; shop_url?: string }) => {
+    guarded(async (args: { items: { id: string; qty: number }[]; email: string; name?: string; payment?: "agent" | "card"; shop_url?: string }) => {
       const shop = await shopFor(args.shop_url);
-      // Pay over x402 where the shop takes it; a test shop marks the order paid straight away.
-      const { payments } = (await call(shop, "/api/catalog")) as { payments: { x402?: unknown; test?: boolean } };
-      const rail = payments.x402 ? "x402" : payments.test ? "test" : null;
-      if (!rail) throw new ToolError("This shop doesn't take agent payments.");
+      // The agent pays over x402 where the shop takes it, a test shop marks the order paid straight away, and a
+      // shop that takes cards gives the user a checkout link.
+      const { payments } = (await call(shop, "/api/catalog")) as { payments: { x402?: unknown; test?: boolean; card?: boolean; square?: unknown } };
+      const agentRail = payments.x402 ? "x402" : payments.test ? "test" : null;
+      const cardRail = payments.square ? "square" : payments.card ? "card" : null;
+      const rail = args.payment === "card" ? cardRail : args.payment === "agent" ? agentRail : (agentRail ?? cardRail);
+      if (!rail) throw new ToolError(args.payment === "card" ? "This shop doesn't take cards." : "This shop doesn't take agent payments.");
       const data = await call(shop, "/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -259,6 +273,13 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
           `Test order ${order.id}: ${order.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}, ${money(order.totalCents, order.currency)}, ` +
             `marked paid with no money moving. The shop emails ${args.email} the receipt and pickup QR; the pass is at ${next.passUrl}.`,
           { shop, orderId: order.id, status: order.status, test: true, total: money(order.totalCents, order.currency), items: order.items, passUrl: next.passUrl },
+        );
+      }
+      if (rail === "square" || rail === "card") {
+        return reply(
+          `Order ${order.id}: ${order.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}, ${money(order.totalCents, order.currency)}. ` +
+            `Give the user this link to pay by card: ${next.url}. Once they've paid, the shop emails ${args.email} the receipt and pickup QR.`,
+          { shop, orderId: order.id, total: money(order.totalCents, order.currency), items: order.items, payBy: "card", checkoutUrl: next.url, collectBy: order.collectBy },
         );
       }
       return reply(
@@ -281,6 +302,16 @@ export function createPickupMcpServer(opts: PickupMcpOptions): McpServer {
     },
     guarded(async (args: { order_id: string; shop_url?: string }) => {
       const shop = await shopFor(args.shop_url);
+      const status = (await call(shop, `/api/orders/${encodeURIComponent(args.order_id)}`)) as { order: { rail: string; status: string }; checkoutUrl?: string };
+      if (status.order.rail === "square" || status.order.rail === "card") {
+        if (status.order.status !== "awaiting_payment") return reply(`Order ${args.order_id} is already paid (${status.order.status}).`, { orderId: args.order_id, status: status.order.status });
+        return reply(
+          status.checkoutUrl
+            ? `This order is paid by card: give the user ${status.checkoutUrl} to pay on.`
+            : "This order is paid by card, on the checkout link create_pickup_order returned.",
+          { orderId: args.order_id, payBy: "card", checkoutUrl: status.checkoutUrl ?? null },
+        );
+      }
       const payUrl = `${shop}/api/orders/${encodeURIComponent(args.order_id)}/pay`;
       if (!opts.payer) {
         const res = await doFetch(new Request(payUrl, { method: "POST" }));

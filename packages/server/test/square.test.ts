@@ -77,6 +77,7 @@ class FakeSquare {
     logo_url: "https://images.square.test/logo-square.png",
     full_format_logo_url: "https://images.square.test/logo-wide.png",
     timezone: "Australia/Sydney",
+    country: "AU",
     coordinates: { latitude: -33.8836, longitude: 151.2149 },
     address: { address_line_1: "12 Crown St", locality: "Surry Hills", administrative_district_level_1: "NSW", postal_code: "2010", country: "AU" },
     business_hours: {
@@ -184,8 +185,16 @@ class FakeSquare {
     }
     if (method === "POST" && url.pathname === "/v2/payments") {
       const order = this.orders.get(body.order_id);
-      if (body.source_id !== "EXTERNAL" || !body.external_details?.type || !body.external_details?.source) return error(400, "INVALID_VALUE", "external_details");
       if (!order || body.amount_money?.amount !== order.total_money.amount) return error(400, "INVALID_VALUE", "amount must match the order total");
+      // Square's sandbox test tokens for a card: one that's approved, one that's declined.
+      if (body.source_id === "cnon:card-nonce-declined") return error(400, "CARD_DECLINED", "Card declined.");
+      if (body.source_id === "cnon:card-nonce-ok") {
+        if (body.autocomplete !== true) return error(400, "INVALID_VALUE", "expected an immediate charge");
+        const payment = { id: `PAY_${this.payments.length + 1}`, ...body, status: "COMPLETED", card_details: { card: { card_brand: "VISA", last_4: "5858" } } };
+        this.payments.push(payment);
+        return remember({ payment });
+      }
+      if (body.source_id !== "EXTERNAL" || !body.external_details?.type || !body.external_details?.source) return error(400, "INVALID_VALUE", "external_details");
       const payment = { id: `PAY_${this.payments.length + 1}`, ...body, status: "COMPLETED" };
       this.payments.push(payment);
       return remember({ payment });
@@ -583,4 +592,114 @@ test("square: a group order reaches Square once, as one pickup order with each l
   assert.equal((sq.fulfillments[0].pickup_details as { recipient: { display_name: string } }).recipient.display_name, "Coffee run (Robin)");
   assert.equal(sq.ticket_name, "TEST · agentPickup", "every share was a test payment, so the group's order is a test too");
   assert.equal(square.payments.length, 0);
+});
+
+
+/** A shop on Square that takes cards through it (the "square" rail), and no test payments. */
+function cardShop(extra: Record<string, unknown> = {}) {
+  const square = new FakeSquare();
+  const shop = setupShop({
+    currency: "aud",
+    payments: { test: false, card: undefined },
+    connectors: [squareConnector({ accessToken: TOKEN, locationId: LOCATION, fetch: square.fetch, cardPayments: { applicationId: "sandbox-sq0idb-test" } })],
+    ...extra,
+  });
+  return { square, shop };
+}
+
+async function cardOrder(shop: ReturnType<typeof setupShop>) {
+  const res = await shop.post("/api/orders", { items: [{ id: "VAR_FW_LRG", qty: 2 }, { id: "VAR_CR", qty: 1 }], name: "Robin", rail: "square" });
+  assert.equal(res.status, 201, await res.clone().text());
+  return (await res.json()) as { order: { id: string; status: string }; next: { type: string; url: string } };
+}
+
+const pay = (shop: ReturnType<typeof setupShop>, id: string, body: Record<string, unknown>) => shop.post(`/connect/square/pay/${id}`, body);
+
+test("square cards: the buyer pays on the checkout page, the card is charged on the Square order, and the receipt goes out", async () => {
+  const { square, shop } = cardShop();
+  await shop.collect.ready;
+  const { order, next } = await cardOrder(shop);
+  assert.deepEqual([next.type, next.url], ["redirect", `${BASE}/connect/square/pay/${order.id}`]);
+
+  const page = await (await shop.call(`/connect/square/pay/${order.id}`)).text();
+  assert.match(page, /id="card-container"/);
+  assert.match(page, /https:\/\/sandbox\.web\.squarecdn\.com\/v1\/square\.js/);
+  assert.match(page, /\/collect-assets\/square-pay\.js/);
+  assert.match(page, /"appId":"sandbox-sq0idb-test"/);
+  assert.match(page, /"amount":"18\.40","currency":"AUD","country":"AU"/, "Square's own total, and the location's country for Google Pay");
+  assert.match(page, /"needsEmail":true/);
+  assert.equal((await shop.call("/collect-assets/square-pay.js")).status, 200);
+
+  assert.equal((await pay(shop, order.id, { sourceId: "cnon:card-nonce-ok" })).status, 400, "the QR needs an email");
+  const declined = await pay(shop, order.id, { sourceId: "cnon:card-nonce-declined", email: "robin@example.com" });
+  assert.equal(declined.status, 402);
+  assert.match(((await declined.json()) as { error: string }).error, /declined/);
+  assert.equal((await shop.store.getOrder(order.id))!.status, "awaiting_payment");
+
+  const ok = await pay(shop, order.id, { sourceId: "cnon:card-nonce-ok", email: "robin@example.com" });
+  assert.equal(ok.status, 200, await ok.clone().text());
+  assert.equal(((await ok.json()) as { thanksUrl: string }).thanksUrl, `${BASE}/orders/${order.id}/thanks`);
+  await shop.collect.flushConnectors();
+
+  const paid = (await shop.store.getOrder(order.id))!;
+  assert.deepEqual([paid.status, paid.rail, paid.captureMode, paid.customerEmail], ["paid", "square", "charge", "robin@example.com"]);
+  assert.equal(square.orders.size, 1, "one Square order, made for the checkout and not again when it was paid");
+  const [sq] = [...square.orders.values()];
+  assert.deepEqual(sq.line_items.map((l) => [l.catalog_object_id, l.quantity]), [["VAR_FW_LRG", "2"], ["VAR_CR", "1"]], "the venue's own menu items, at full price");
+  assert.equal(square.payments.length, 1, "the card payment is the only payment: nothing recorded as paid elsewhere");
+  const charge = square.payments[0] as { source_id: string; order_id: string; amount_money: { amount: number }; autocomplete: boolean; buyer_email_address: string };
+  assert.deepEqual([charge.source_id, charge.order_id, charge.amount_money.amount, charge.buyer_email_address], ["cnon:card-nonce-ok", sq.id, 1840, "robin@example.com"]);
+  assert.equal(paid.paymentRef, (square.payments[0] as { id: string }).id);
+  assert.match((await shop.store.getLatestEmail(order.id))!.html, /Card, through the shop&#39;s Square|Card, through the shop's Square/);
+
+  assert.equal((await shop.call(`/connect/square/pay/${order.id}`)).status, 302, "a paid order's checkout goes to its thanks page");
+  assert.equal((await pay(shop, order.id, { sourceId: "cnon:card-nonce-ok", email: "robin@example.com" })).status, 200, "paying again changes nothing");
+  assert.equal(square.payments.length, 1);
+
+  const result = await shop.collect.collect(shop.collect.collectLink(paid));
+  assert.equal(result.ok, true);
+  assert.match(result.ok ? result.message : "", /paid by card at order time/);
+  shop.collect.stop();
+});
+
+test("square cards: an uncollected card order is refunded through Square once; with noShowPolicy keep it isn't", async () => {
+  for (const policy of ["release", "keep"] as const) {
+    const { square, shop } = cardShop({ noShowPolicy: policy });
+    await shop.collect.ready;
+    const { order } = await cardOrder(shop);
+    assert.equal((await pay(shop, order.id, { sourceId: "cnon:card-nonce-ok", email: "robin@example.com" })).status, 200);
+    await shop.collect.flushConnectors();
+    await shop.store.updateOrder(order.id, { collectBy: Date.now() - 1 });
+    await shop.collect.sweep();
+    await shop.collect.flushConnectors();
+    assert.equal((await shop.store.getOrder(order.id))!.status, "expired");
+    const [sq] = [...square.orders.values()];
+    assert.equal(sq.fulfillments[0].state, "CANCELED");
+    if (policy === "release") {
+      assert.equal(square.refunds.length, 1, "refunded once, though the expiry event asks again");
+      const refund = square.refunds[0] as { payment_id: string; amount_money: { amount: number } };
+      assert.deepEqual([refund.payment_id, refund.amount_money.amount], [(square.payments[0] as { id: string }).id, 1840]);
+    } else {
+      assert.equal(square.refunds.length, 0, "the shop keeps no-shows' money");
+    }
+    shop.collect.stop();
+  }
+});
+
+test("square cards: the catalog offers them, a sandbox shop isn't real money, and without cardPayments the rail is refused", async () => {
+  const { shop } = cardShop();
+  await shop.collect.ready;
+  const catalog = (await (await shop.call("/api/catalog")).json()) as { payments: { square: { live: boolean } | null } };
+  assert.deepEqual(catalog.payments.square, { live: false });
+  const listing = await shop.collect.listing();
+  assert.equal(listing.testOnly, true, "Square's sandbox moves no real money");
+  shop.collect.stop();
+
+  const { shop: plain } = squareShop();
+  await plain.collect.ready;
+  const refused = await plain.post("/api/orders", { items: [{ id: "VAR_CR", qty: 1 }], email: "robin@example.com", rail: "square" });
+  assert.equal(refused.status, 400);
+  assert.match(((await refused.json()) as { error: string }).error, /Square aren't set up/);
+  assert.equal(((await (await plain.call("/api/catalog")).json()) as { payments: { square: unknown } }).payments.square, null);
+  plain.collect.stop();
 });
