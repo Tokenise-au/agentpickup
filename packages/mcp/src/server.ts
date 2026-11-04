@@ -5,7 +5,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { errorOf, usd, type Fetch, type Payer } from "./wallet.js";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.3.1";
 
 export interface PickupMcpOptions {
   /** The agentPickup shop this server orders from. */
@@ -58,7 +58,8 @@ const INSTRUCTIONS = `agentPickup lets you buy things online for the user to col
 0. find_shops (when available): shops near the user that sell what they want. Pass a shop's shop_url to the other tools.
 1. get_shop: see what the shop sells, its pickup location and how it takes payment.
 2. create_pickup_order: needs the user's email, where the shop sends the pickup QR.
-3. pay_order: pays from the configured wallet in USDC over x402. Confirm the items and total with the user first.
+3. pay_order: pays from the configured wallet in USDC over x402. Where the shop takes cards, payment: "card" on
+   create_pickup_order gives a checkout link for the user to pay on instead. Confirm the items and total with the user first.
 4. Give the user the pass link and pickup code. They show the QR at the counter to collect.
 get_pickup_pass fetches the pass again later; order_status says whether it's ready or collected.
 Group orders (a coffee run): start_group_order gives a code to share; each person's agent calls join_group_order and

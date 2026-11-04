@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.dav3trad3r/agentpickup",
   "title": "agentPickup",
-  "description": "Find pickup shops near you, order, pay in USDC over x402, and get the QR to collect in person.",
+  "description": "Find pickup shops near you, order, pay by card or USDC (x402), and get the QR to collect in person.",
   "repository": {
     "url": "https://github.com/dav3trad3r/agentpickup",
     "source": "github",
     "subfolder": "packages/mcp"
   },
-  "version": "0.3.0",
+  "version": "0.3.1",
   "websiteUrl": "https://agentpickup.app",
   "icons": [
     {
@@ -20,7 +20,7 @@
     {
       "registryType": "npm",
       "identifier": "@agentpickup/mcp",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "transport": {
         "type": "stdio"
       },

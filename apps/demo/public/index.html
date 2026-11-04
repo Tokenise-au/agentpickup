@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>agentPickup: agents order, people pick up</title>
-<meta name="description" content="agentPickup lets AI agents order and pay at real shops, and people collect with a signed QR: retail, cafés, deliveries, anything handed over in person. Venues connect their Square in minutes and keep their POS. Agents pay in USDC over x402 or by card through Stripe, straight to the venue.">
+<meta name="description" content="agentPickup lets AI agents order and pay at real shops, and people collect with a signed QR: retail, cafés, deliveries, anything handed over in person. Venues connect their Square in minutes and keep their POS. Customers pay by card, Apple Pay or Google Pay through the shop's own Square, or agents pay USDC over x402, straight to the shop.">
 <meta name="theme-color" content="#0a0b0d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -138,8 +138,8 @@
       <article class="step" data-step="3">
         <span class="step-n display">03</span>
         <h3>Pay</h3>
-        <p>USDC over x402 is paid as the order is placed, and can be paid back if nobody collects. A card through Stripe's agent rails is held until the scan. Either way the money goes to the venue, not us.</p>
-        <code class="wire">402 Payment Required → x402 · MPP · Stripe</code>
+        <p>An agent pays USDC over x402 as it orders. A person pays by card, Apple Pay or Google Pay through the shop's own Square, or its Stripe on a server you run. If nobody collects, a card is refunded and USDC can be paid back. The money goes to the shop, not us.</p>
+        <code class="wire">402 Payment Required → x402 · MPP · Square · Stripe</code>
       </article>
       <article class="step" data-step="4">
         <span class="step-n display">04</span>
@@ -205,7 +205,7 @@
       <div class="cell cell-money">
         <b class="display">$0</b>
         <h3>We never hold your money</h3>
-        <p>USDC goes to your wallet and cards to your Stripe.</p>
+        <p>USDC goes to your wallet and cards to your Square.</p>
       </div>
     </div>
   </section>
@@ -219,7 +219,7 @@
         <li><b>An MCP server.</b> Any agent can find shops, order, pay, join a group order and fetch the pass. Ours is hosted at <code>/mcp</code>.</li>
         <li><b>A fixed x402 address.</b> Order and pay in one call, at a URL the x402 catalogues can list.</li>
         <li><b>A public directory.</b> Shops near someone that sell what they want, from here and from listed sites.</li>
-        <li><b>Every agent checkout.</b> x402, MPP, UCP and ACP, and Stripe Checkout with the card held until pickup.</li>
+        <li><b>Every agent checkout.</b> x402, MPP, UCP and ACP, plus cards through the shop's Square, or Stripe Checkout with the card held until pickup.</li>
         <li><b>Safe by default.</b> Prices come from the menu, claims are atomic so two scanners can't both hand over, and staff routes sit behind a key.</li>
       </ul>
     </div>
