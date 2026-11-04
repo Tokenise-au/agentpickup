@@ -57,17 +57,19 @@ USDC only in this phase. Other systems (Lightspeed, Toast, Clover, Shopify POS, 
 **Done when** a café connects itself in under five minutes, takes an agent's USDC order, and marks it ready in
 Square.
 
-## Phase 2: safe to run real orders (half a day)
+## Phase 2: safe to run real orders (done 2026-11-04)
 
 | What | Who | Size |
 |---|---|---|
 | Nightly backups of the venue databases, with a restore tested once (built 2026-11-04: encrypted, to the ops Worker, 35 days; `scripts/restore-backup.ts`) | Claude | 2 h |
 | Uptime check on the site, the directory and `/mcp`, plus alerts on failed emails, Square calls and refunds, to you (built 2026-11-04: the ops Worker, every 5 minutes, by email) | Claude | 2 h |
 | An admin view of every venue's recent orders and failures (built 2026-11-04: `/admin/ops`) | Claude | in the above |
-| Put `OPS_URL`, `OPS_KEY` and `BACKUP_KEY` in Railway, and keep `BACKUP_KEY` in your password manager | Dave | 5 min |
+| Put `OPS_URL`, `OPS_KEY` and `BACKUP_KEY` in Railway, and keep `BACKUP_KEY` in your password manager (done 2026-11-04) | Dave | 5 min |
 | Usage counters and the 8am Brisbane report email: agents, orders, sellers, site, money, problems (done 2026-11-04) | Claude | done |
 
-**Done when** a restore from last night's backup works and a forced failure reaches you within minutes.
+**Done when** a restore from last night's backup works and a forced failure reaches you within minutes. Both
+proven 2026-11-04: the first backup (7 files) restored with every check passing, and the test alert was emailed
+at the Worker's next five-minute check.
 
 ## Phase 3: first real venues (weeks 2-3)
 

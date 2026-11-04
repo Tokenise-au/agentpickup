@@ -134,8 +134,8 @@ Sellers come back with Sign in with Square to a small page: colour, wallet, list
 - [x] The ops Worker (`ops/`): uptime and `/ops/health` checks every 5 minutes, alert emails to the operator, "back" and "all clear" follow-ups
 - [x] `/admin/ops`: health now, backups, problems, each venue's latest orders, and a test-alert button
 - [x] Venues get their own email limits (30 per address, 150 a day), no longer the public demo's 3 and 100
-- [ ] Dave: put `OPS_URL`, `OPS_KEY` and `BACKUP_KEY` from `~/.agentpickup/ops.env` into Railway; keep `BACKUP_KEY` in a password manager
-- [ ] Then: switch the Worker's schedule back on, run the first backup, restore it, and send a test alert (done when a restore works and the alert arrives within minutes)
+- [x] Dave put `OPS_URL`, `OPS_KEY` and `BACKUP_KEY` into Railway (2026-11-04); `BACKUP_KEY` belongs in a password manager too
+- [x] Proven live 2026-11-04: the first backup ran by itself (7 files), `scripts/restore-backup.ts` brought it back with every hash and integrity check passing, and the test alert went out at the Worker's next check
 
 ## Next: get it in front of people (2026-11-04)
 

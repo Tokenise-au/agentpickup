@@ -4,7 +4,7 @@
   "name": "agentpickup-ops",
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
-  "triggers": { "crons": [] },
+  "triggers": { "crons": ["*/5 * * * *"] },
   "kv_namespaces": [{ "binding": "OPS", "id": "4b34f4db467d4fcc99d5dc07d71799cc" }],
   "send_email": [{ "name": "EMAIL" }],
   "vars": {
