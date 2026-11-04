@@ -2,6 +2,9 @@
 
 The pickup layer for agent payments: click and collect for people and their AI agents.
 
+New to agentPickup? [START-HERE.md](START-HERE.md) is the one-page overview: what's live, how the money moves,
+where it runs and who holds each login, and what's next.
+
 1. Someone buys online: a person at checkout, or an AI agent through x402, MPP, UCP or ACP.
 2. They pay by card through the shop's Square (Apple Pay and Google Pay too) or Stripe, in USDC (x402), or with a
    Stripe Shared Payment Token handed over by an agent platform.
@@ -16,7 +19,7 @@ Shoppers and staff only ever see the shop's name, colours and email address.
 ```bash
 npm install
 npm start          # http://localhost:8402
-npm test           # 282 tests: every path on SQLite, and again on Postgres (in-process PGlite)
+npm test           # every path on SQLite, and again on Postgres (in-process PGlite)
 npm run typecheck
 ```
 
