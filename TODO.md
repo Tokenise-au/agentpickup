@@ -152,6 +152,15 @@ The product is ahead of demand, so these come before more features. Order of pla
 - [ ] Later: an office-kitty demo, a team's Safe with an agent allowance ordering pickups (an integration demo, not a product; we don't build or hold wallets)
 - [ ] Later: real logos for Lightspeed, Toast, Clover, Base and PayAI from their brand kits (check each one's partner-logo rules first)
 
+## Going global (noted 2026-11-05)
+
+Sign-up and cards run only through Square (8 countries), and the converter covers the ECB's ~30 currencies.
+
+- [ ] Shops without a POS: menu typed in at sign-up, orders and Ready on the staff page (about a day)
+- [ ] A wider currency source beside the ECB's, so any currency can take USDC (1 h, with the above)
+- [ ] Shopify POS connector (1-2 days; Dave creates the Shopify Partner app)
+- [ ] Terms and privacy for shops and customers outside Australia, GDPR for the EU (Dave, with a lawyer)
+
 ## Roadmap
 
 The phases, sizes and order are in [ROADMAP.md](ROADMAP.md) (2026-11-03). It replaces the earlier phases 0-5,

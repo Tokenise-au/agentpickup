@@ -120,9 +120,26 @@ card checkouts (ChatGPT, Google, Stripe's MPP).
 **Done when** a second server runs alongside the first with no double emails, sweeps or refunds. That's
 production ready.
 
+## Going global (noted 2026-11-05, to schedule)
+
+Nothing in the code ties agentPickup to Australia: any currency and time zone works, and the money goes straight
+from the agent to the shop's wallet, so we don't need a licence in each country. What keeps us to Square's 8
+countries (US, Canada, UK, Ireland, France, Spain, Australia, Japan) is that sign-up and cards both run through
+Square, and that the currency converter knows the ECB's ~30 currencies.
+
+| What | Who | Size |
+|---|---|---|
+| Shops without a POS: the menu typed in at sign-up, orders on the staff page, Ready tapped there. Works in any country | Claude | about a day |
+| A wider currency source beside the ECB's, so a shop pricing in any currency (dirhams, dong, naira...) can take USDC. Only matters once shops can join without Square | Claude | 1 h, with the above |
+| Shopify POS connector: Shopify sells in far more countries than Square | Claude | 1-2 days |
+| A Shopify Partner app for the connector | Dave | 15 min |
+| Terms and privacy for shops and customers outside Australia (GDPR for the EU), reviewed by a lawyer | Dave | |
+| Cards outside Square's countries: Stripe Connect (Phase 4) covers far more countries | Claude | in Phase 4 |
+
+**Done when** a shop outside Square's countries signs itself up and takes an agent's USDC order.
+
 ## Parked
 
-- Square payments for people's cards: agent card payments run on Stripe today.
 - The customer order page: venues already have their own.
 - Apple and Google Wallet passes, rotating QR codes, offline scanning, custom domains per venue.
 - x402 hold-then-capture (`auth-capture`), once a facilitator supports it.
