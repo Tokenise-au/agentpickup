@@ -339,7 +339,7 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
                 ? ` Your ${esc(venue.currency.toUpperCase())} prices are converted to US dollars at the day's exchange rate when an agent orders.`
                 : ` USDC can't be taken for ${esc(venue.currency.toUpperCase())} prices here yet.`
           }</p>
-          <label class="check"><input type="checkbox" name="test" value="1" checked> Keep test mode on, so you can try orders with no real money first</label>
+          <label class="check"><input type="checkbox" name="test" value="1" checked> Allow test orders too, so you can try one with no real money first. Card and USDC orders are real payments</label>
           <button class="btn" type="submit">Continue</button>
         </form>`,
         3,
@@ -398,7 +398,8 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
     }
     return c.html(
       page(
-        venue.test ? `${venue.name} is set up in test mode` : `${venue.name} is live`,
+        // Test mode only adds test payments: with cards on, real card orders come in from the start.
+        venue.test && !venue.cards ? `${venue.name} is set up in test mode` : `${venue.name} is live`,
         `${
           staffKey
             ? `<section class="card key"><span class="muted small">Staff key</span><code>${esc(staffKey)}</code>
@@ -418,7 +419,13 @@ export function mountSignup(app: Hono, deps: SignupDeps) {
           </div>
         </section>
         <p class="muted small">${venue.listed ? `Agents can find you in the <a href="/directory/v1/shops?q=${encodeURIComponent(venue.name)}">directory</a>.` : ""}
-        ${venue.test ? " Test mode is on: orders go through with no real money until you add a wallet and turn it off." : ""}</p>`,
+        ${
+          !venue.test
+            ? ""
+            : venue.cards
+              ? " Test orders are on too: pick a test payment to try one with no real money. Card orders are real, charged on your Square."
+              : " Test mode is on: orders go through with no real money until you add a wallet and turn it off."
+        }</p>`,
         4,
       ),
     );

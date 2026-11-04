@@ -315,6 +315,18 @@ test("seller page: previews the pass in the shop's branding, renames the shop, a
   host.stop();
 });
 
+test("signup: with cards and test orders both on, the done page says card orders are real", async () => {
+  const { host } = setup();
+  const b = browser(host.app);
+  await signIn(b);
+  const csrf = csrfIn(await (await b.go("/connect/location")).text());
+  const payments = (await b.form("/connect/location", { locationId: "L1", csrf })).headers.get("location")!;
+  await b.form(payments, { csrf, cards: "1", test: "1", wallet: "" });
+  const done = await (await b.go(`/connect/done?venue=${new URL(payments, HOST).searchParams.get("venue")}`)).text();
+  assert.match(done, /Corner Café is live/, "not 'test mode': cards take real money");
+  assert.match(done, /Card orders are real, charged on your Square/);
+});
+
 test("signup: with cards through Square and no wallet, a venue can go live, and buyers pay on its checkout page", async () => {
   const { host } = setup();
   const b = browser(host.app);
