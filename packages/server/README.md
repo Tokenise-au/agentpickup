@@ -1,9 +1,9 @@
 # @agentpickup/server
 
-The pickup layer for agent payments. A person or an AI agent buys online and pays by card (Stripe),
-USDC (x402), or a Stripe Shared Payment Token through MPP, UCP (with AP2 mandates) or ACP. The shop
-emails a signed QR, staff scan it at the counter, and the order is handed over. A card hold is
-captured at that moment; no-shows are released or refunded.
+The pickup layer for agent payments. A person or an AI agent buys online and pays by card (through the
+shop's Square, with Apple Pay and Google Pay, or Stripe), USDC (x402), or a Stripe Shared Payment Token
+through MPP, UCP (with AP2 mandates) or ACP. The shop emails a signed QR, staff scan it at the counter, and
+the order is handed over. A Stripe card hold is captured at that moment; no-shows are released or refunded.
 
 Shoppers and staff only ever see the shop's name, colours and email address.
 
@@ -37,7 +37,8 @@ its own at `/.well-known/agentpickup.json`). With
 `/seller`; `fxToUsdCents()` lets venues pricing in AUD and other currencies take USDC.
 
 Connectors put orders on the screens staff already use: `squareConnector` for Square POS (menu and the
-venue's logo, address, hours and map position in; paid pickup orders out; ready and collected both ways), and
+venue's logo, address, hours and map position in; paid pickup orders out; ready and collected both ways; cards, Google Pay and Apple Pay on a checkout page,
+charged on the Square order, with `appleDomainAssociation()` serving Apple's domain file), and
 a connector API at `/connect/v1` any other platform can integrate against.
 
 The first email is a receipt. With `qrEmail: "when-ready"` the pickup QR follows when the order is marked

@@ -21,7 +21,7 @@
 </header>
 
 <main class="doc">
-  <p class="updated">Last updated 3 November 2026</p>
+  <p class="updated">Last updated 5 November 2026</p>
   <h1>Privacy</h1>
   <p>agentPickup is run by Tokenise Pty Ltd (ABN 56 691 028 038), Queensland, Australia. This page covers
   agentpickup.app: the shops hosted on it, the hosted MCP server at <code>/mcp</code>, the shop directory and
@@ -34,7 +34,7 @@
     <thead><tr><th>When</th><th>What</th><th>Why</th></tr></thead>
     <tbody>
       <tr><td>You order from a shop here</td><td>Your email, your name if you give one, what you ordered, and when it was paid, made ready and collected</td><td>To send your receipt and pickup QR, so staff know whose order it is, and so the shop can answer questions about it</td></tr>
-      <tr><td>You pay</td><td>The payment reference. For USDC, the paying wallet address and the public transaction. Card details go to Stripe, never to us</td><td>To match the payment to your order and handle refunds</td></tr>
+      <tr><td>You pay</td><td>The payment reference. For USDC, the paying wallet address and the public transaction. Card details go to Square, never to us</td><td>To match the payment to your order and handle refunds</td></tr>
       <tr><td>You or your AI agent use the MCP server</td><td>What the tools are asked to do: the shop, items and the email to send the QR to</td><td>To place and track the order</td></tr>
       <tr><td>You fill in the partner form</td><td>Your email, the kind of business and your note</td><td>To reply to you</td></tr>
       <tr><td>Staff use the scanner page</td><td>A cookie that keeps that device signed in</td><td>So staff don't sign in on every scan</td></tr>
@@ -47,11 +47,10 @@
   <h2>Who else handles it</h2>
   <ul>
     <li><strong>The shop</strong> you ordered from, which is responsible for your order.</li>
-    <li><strong>Square</strong>, when a shop is connected to it: the order with your name, so it shows on the shop's own screens. Not your email.</li>
+    <li><strong>Square</strong>, when a shop is connected to it: the order with your name, so it shows on the shop's own screens. If you pay by card, Square also processes the payment, with your card details and your email, to check the payment. Apple Pay and Google Pay, if you use them, pass your card to Square under Apple's or Google's own terms.</li>
     <li><strong>Railway</strong> hosts the site and stores orders.</li>
     <li><strong>Cloudflare</strong> runs the domain, sends our emails and counts page visits.</li>
     <li><strong>PayAI</strong> settles USDC payments. It sees the payment, not your email.</li>
-    <li><strong>Stripe</strong> processes card payments for shops that take cards.</li>
   </ul>
   <p>Some of these services store information outside Australia, including in the United States.</p>
   <p>USDC payments are recorded on the Base blockchain, which is public. A blockchain record can't be changed

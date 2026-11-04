@@ -54,7 +54,8 @@ real goods need that raised.
 
 `@agentpickup/mcp` lets any MCP client find agentPickup shops and order from them: `find_shops` (near a
 point, in a suburb, or selling something, from the [directory](#agent-directory)), `get_shop`,
-`create_pickup_order`, `pay_order` (x402 from a wallet you configure, with a spend cap), `order_status`,
+`create_pickup_order` (or a card checkout link for the user, where the shop takes cards), `pay_order` (x402
+from a wallet you configure, with a spend cap), `order_status`,
 `get_pickup_pass` (Sign-In-With-X), and [group orders](#group-orders) (`start_group_order`, `join_group_order`,
 `group_order_status`, `close_group_order`). The demo hosts it at `/mcp`, searching every venue there and paying the
 Demo Café with the demo agent's wallet:
@@ -475,6 +476,10 @@ See [TODO.md](TODO.md) for what's built and what's next.
   the thanks page confirming the session, the hold (`requires_capture`, nothing taken), the scan capturing
   it in full, a second scan refused, and a no-show releasing the hold (`canceled`, nothing ever taken).
   MPP and UCP/ACP Shared Payment Token charges have still only run against a stand-in.
+- Cards through the shop's Square have run against the real Square sandbox in a browser (2026-11-04): Square's
+  card form, the payment on the Square order as a card tender, and an uncollected order refunded automatically.
+  Google Pay and Apple Pay use the same charge, and agentpickup.app is registered with Square for Apple Pay;
+  neither has been paid from a phone yet.
 - Email: real pickup emails (the QR email and the "ready" email) have gone out through Resend and through
   Cloudflare Email Sending from orders@agentpickup.app (2026-11-03); when a provider refuses a send the
   order carries on with the failure recorded.
@@ -485,7 +490,7 @@ See [TODO.md](TODO.md) for what's built and what's next.
   profile from its Square location is tested against a stand-in of Square's Locations API.
 - Not built yet: Doshii and Deliverect connectors (they need partner access), a venue admin dashboard (the
   admin API is there), custom domains per venue, Stripe Connect for platforms, Apple/Google Wallet passes, rotating QR codes, offline
-  scanning, a Shopify connector, UCP request signatures and cart/catalog endpoints, and the AP2
+  scanning, a Shopify connector, shops without a POS, UCP request signatures and cart/catalog endpoints, and the AP2
   payment mandate (the PSP's job).
 - On npm: [`@agentpickup/core`](https://www.npmjs.com/package/@agentpickup/core),
   [`@agentpickup/server`](https://www.npmjs.com/package/@agentpickup/server) and

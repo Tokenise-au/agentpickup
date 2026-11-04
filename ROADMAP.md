@@ -16,7 +16,8 @@ where sellers look.
 - Live at [agentpickup.app](https://agentpickup.app): the Demo Café takes real USDC on Base, and a Square sandbox
   venue shows the Square flow end to end (menu in, order on Square's screens, "ready" from Square, scan to
   collect). Square sellers sign themselves up at [agentpickup.app/connect](https://agentpickup.app/connect)
-  with their real Square account (production app since 2026-11-04).
+  with their real Square account (production app since 2026-11-04), and take cards, Apple Pay and Google Pay
+  through their own Square.
 - On npm (2026-11-05): `@agentpickup/core` 0.3.0, `@agentpickup/server` 0.8.0 (sign-up, group orders, cards and
   Apple Pay through the shop's Square) and `@agentpickup/mcp` 0.3.1.
 - In the official MCP Registry (0.3.1). Agents can find shops through the directory and `find_shops`.

@@ -10,8 +10,8 @@ QR they show at the counter to collect.
 |---|---|
 | `find_shops` | Shops near a point (`lat`/`lng`), in a suburb (`place`) or selling something (`query`), from the agentPickup directory: each one's `shop_url`, address, hours, open now, distance and matching items |
 | `get_shop` | Items and prices, the pickup location, and how the shop takes payment |
-| `create_pickup_order` | Creates an order. Needs the user's email, where the shop sends the receipt and pickup QR. A test shop marks it paid straight away, with no money moving |
-| `pay_order` | Pays the order's x402 link from your wallet and returns the pass link. With no wallet set up, returns the price and pay link instead |
+| `create_pickup_order` | Creates an order. Needs the user's email, where the shop sends the receipt and pickup QR. A test shop marks it paid straight away, with no money moving. Where the shop takes cards, `payment: "card"` returns a checkout link for the user to pay on instead |
+| `pay_order` | Pays the order's x402 link from your wallet and returns the pass link. With no wallet set up, returns the price and pay link instead. For a card order, returns its checkout link |
 | `order_status` | Waiting for payment, paid, ready, collected or expired |
 | `get_pickup_pass` | Fetches the pass link, pickup code and QR again by signing in as the paying wallet (Sign-In-With-X) |
 | `start_group_order` | Starts a group order (a coffee run) with a closing time; returns the code to share and a key to close it early |
