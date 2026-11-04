@@ -4,7 +4,7 @@
   "title": "agentPickup",
   "description": "Find pickup shops near you, order, pay by card or USDC (x402), and get the QR to collect in person.",
   "repository": {
-    "url": "https://github.com/dav3trad3r/agentpickup",
+    "url": "https://github.com/Tokenise-au/agentpickup",
     "source": "github",
     "subfolder": "packages/mcp"
   },

@@ -39,12 +39,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dav3trad3r/agentpickup.git",
+    "url": "git+https://github.com/Tokenise-au/agentpickup.git",
     "directory": "packages/mcp"
   },
   "homepage": "https://agentpickup.app",
   "bugs": {
-    "url": "https://github.com/dav3trad3r/agentpickup/issues"
+    "url": "https://github.com/Tokenise-au/agentpickup/issues"
   },
   "author": "Dave Hallett",
   "license": "FSL-1.1-ALv2",

@@ -1,6 +1,6 @@
 # @agentpickup/core
 
-The pickup-pass format behind [agentPickup](https://github.com/dav3trad3r/agentpickup): the signed QR a
+The pickup-pass format behind [agentPickup](https://github.com/Tokenise-au/agentpickup): the signed QR a
 customer shows at the counter after a person or an AI agent pays online.
 
 A pass is a compact JWS signed with Ed25519, carrying `{v, oid, pid, exp}`. Items, names and amounts stay

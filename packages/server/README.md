@@ -53,7 +53,7 @@ one call at `<shop>/api/x402/order`, an address that never changes, so x402 cata
 list the shop.
 
 Node 22.13 or later (uses `node:sqlite`). Full configuration, routes and protocol notes:
-[github.com/dav3trad3r/agentpickup](https://github.com/dav3trad3r/agentpickup).
+[github.com/Tokenise-au/agentpickup](https://github.com/Tokenise-au/agentpickup).
 
 Licence: FSL-1.1-ALv2. Free to use, run and self-host for your own shop or platform; not for offering a
 competing product. Each release becomes Apache-2.0 two years after it ships.

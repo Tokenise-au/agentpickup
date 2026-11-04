@@ -60,12 +60,12 @@ manager.
 | What | Where | Login |
 |---|---|---|
 | The site, API, MCP server and every venue's database (SQLite files on a volume at `/data`) | Railway, service `web`. Every push to `main` deploys it | Dave |
-| The code | GitHub, moving from `dav3trad3r/agentpickup` to `Tokenise-au/agentpickup` | Dave, and the Tokenise-au org |
+| The code | GitHub, [`Tokenise-au/agentpickup`](https://github.com/Tokenise-au/agentpickup) (moved from `dav3trad3r` on 5 Nov; old links redirect) | Dave, and the Tokenise-au org |
 | The domain, DNS, outgoing email (orders@, alerts@ and reports@agentpickup.app), page counts, and the ops Worker in `ops/` that keeps the backups and checks uptime | Cloudflare | Dave |
 | "Sign in with Square" for sellers, and Square's webhooks | Square Developer Console: a production app and a sandbox app | Dave |
 | USDC settlement | PayAI's public facilitator. No account yet; the free tier covers 1,000 payments | none |
 | The npm packages | npm account `dbh88` | Dave |
-| The MCP Registry entry `io.github.dav3trad3r/agentpickup` | Tied to Dave's GitHub login. Keep the name after the repo moves: directories copied it | Dave |
+| The MCP Registry entry `io.github.dav3trad3r/agentpickup` | Tied to Dave's GitHub login, so it kept its name when the repo moved. Keep it: directories copied it | Dave |
 | The mcprush listing | Claimed 5 Nov through GitHub. Its analytics are off on purpose: they route agent traffic through mcprush | Dave |
 
 The main Railway variables, by name: `ADMIN_KEY` (the admin pages); `VENUE_ADMIN_KEY` and `VENUE_SECRET` (the

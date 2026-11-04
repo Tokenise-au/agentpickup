@@ -1,6 +1,6 @@
 # @agentpickup/mcp
 
-An MCP server for [agentPickup](https://github.com/dav3trad3r/agentpickup) shops. It lets an AI agent find
+An MCP server for [agentPickup](https://github.com/Tokenise-au/agentpickup) shops. It lets an AI agent find
 pickup shops near its user, see what they sell, order, pay by card or in USDC over x402, and hand its user the
 QR they show at the counter to collect.
 
