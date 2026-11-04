@@ -42,6 +42,9 @@ is free during the pilot.
 - **The MCP server**, hosted at `https://agentpickup.app/mcp` and on npm. It's in the official MCP Registry,
   and directories pick it up from there (mcprush, Glama, mcptry and more).
 - **The shop directory** agents search: [/directory/v1/shops](https://agentpickup.app/directory/v1/shops).
+- **x402 listings:** the Demo Café's fixed order address (`/api/x402/order`) is in PayAI's x402 discovery and on
+  [x402scan](https://www.x402scan.com/server/540b44bb-c2ad-479c-bb5c-0001fc3dcbdc) (registered 5 Nov). x402-list has it in
+  review. x402scan registers only what `/openapi.json` describes, so keep new paid routes in it.
 - **On npm:** `@agentpickup/core` 0.3.0 (the pickup pass, Apache-2.0), `@agentpickup/server` 0.8.0 and
   `@agentpickup/mcp` 0.3.1 (FSL-1.1-ALv2: anyone can use them except to run a competing service, and each
   release becomes Apache-2.0 two years on).
