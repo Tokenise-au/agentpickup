@@ -235,6 +235,10 @@ const pickup = createCollect({
   (not held), and an uncollected order is refunded through Square (or kept, with `noShowPolicy: "keep"`).
   Declines come back in plain words. `POST /api/orders` with `rail: "square"` answers `next.type: "redirect"` to
   the checkout, and `GET /api/orders/:id` gives its `checkoutUrl` while unpaid. Needs the PAYMENTS_WRITE scope.
+- **Apple Pay** shows on the checkout in Safari on Apple devices. Apple wants a file from Square at the domain's
+  root: mount `appleDomainAssociation()` at `APPLE_PAY_DOMAIN_PATH` (`createVenueHost` does), which fetches it
+  from Square and keeps it an hour. The connector registers the domain with Square once per seller, with the
+  seller's token, the first time a checkout page loads (HTTPS on a real domain only).
 - Check your setup against a sandbox: `node --conditions=source --import tsx scripts/square-sandbox-check.ts`, and
   card payments with `scripts/square-card-check.ts` (Square's test cards: declined, approved, then a no-show refund).
 

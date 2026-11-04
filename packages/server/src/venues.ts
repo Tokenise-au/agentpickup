@@ -17,6 +17,7 @@ import { squareOAuth, type SquareLocationSummary, type SquareTokens } from "./co
 import { createCollect } from "./index.js";
 import { searchDirectory, type DirectoryQuery, type ShopListing } from "./directory.js";
 import { mountSignup, type SellerVenue, type SignupConfig } from "./signup.js";
+import { APPLE_PAY_DOMAIN_PATH, appleDomainAssociation } from "./apple-pay.js";
 import { checkListingUrl, fetchListing, ListingError } from "./listing.js";
 
 /** What a platform sends to create or change a venue. Secret fields are write-only. */
@@ -632,6 +633,8 @@ export function createVenueHost(cfg: VenueHostConfig) {
   });
   admin.delete("/listings/:id", async (c) => ((await removeListing(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "No such listing." }, 404)));
   app.route("/host/v1", admin);
+  // Apple Pay on the venues' Square checkouts: Square's domain file, at the domain's root.
+  app.get(APPLE_PAY_DOMAIN_PATH, appleDomainAssociation({ fetch: cfg.fetch }));
 
   // ---------- Square's one webhook for every venue ----------
   if (square && cfg.signup?.square.webhookSignatureKey) {

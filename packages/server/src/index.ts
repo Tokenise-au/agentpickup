@@ -71,6 +71,7 @@ export { PostgresStore, type PostgresStoreOptions, type Queryable } from "./post
 export { parseCatalog, type ConnectConfig } from "./connect.js";
 export type { ConnectorContext, PickupConnector, ShopProfile } from "./connectors/types.js";
 export { profileFromSquare, squareConnector, type SquareConnectorConfig } from "./connectors/square.js";
+export { APPLE_PAY_DOMAIN_PATH, appleDomainAssociation } from "./apple-pay.js";
 export {
   SQUARE_SCOPES,
   squareOAuth,

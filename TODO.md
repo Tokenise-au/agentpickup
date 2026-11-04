@@ -61,7 +61,7 @@ Ticked items are built, tested, and passed the full regression suite (`npm test`
 - [x] Group orders (2026-11-04): each person's agent pays its own share to the shop; at closing the paid shares become one combined order (each line "for <name>"), sent to Square once, QR to the organiser; ready, collected and expiry follow to every share. MCP `start_group_order` / `join_group_order` / `group_order_status` / `close_group_order`. Checked live on the Square sandbox: one order, lines "for Sam" and "for Alex"
 - [ ] Doshii and Deliverect connectors (need partner API access)
 - [x] Square payments for people's cards (2026-11-04): rail `"square"`, a checkout page with Square's Web Payments SDK (card and Google Pay), charged on the Square order so it shows paid by card on the POS, refunded through Square if not collected; on in sign-up by default; the MCP gives the user a checkout link (`payment: "card"`, and `pay_order` hands it back). Checked against the real Square sandbox with its test cards
-- [ ] Apple Pay on the Square checkout: register the domain with Square
+- [x] Apple Pay on the Square checkout (2026-11-04): Square's domain file served at /.well-known (fetched from Square, kept an hour), the domain registered per seller on first checkout, a Safari-only button. Still to see: a real Apple Pay payment from an iPhone
 
 ## Next: sellers sign themselves up (planned 2026-11-03, not started)
 

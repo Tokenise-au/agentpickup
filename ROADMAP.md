@@ -91,7 +91,7 @@ card checkouts (ChatGPT, Google, Stripe's MPP).
 | What | Who | Size |
 |---|---|---|
 | Cards and Google Pay through the shop's Square: a checkout page, charged on the Square order, refunded if not collected (built 2026-11-04) | Claude | done |
-| Apple Pay on the Square checkout (register agentpickup.app's domain with Square) | Claude | 1-2 h |
+| Apple Pay on the Square checkout (built 2026-11-04; a payment from an iPhone still to try) | Claude | done |
 | Confirm Stripe Shared Payment Tokens charge on a connected seller's account | Claude | 1 h, before building |
 | Connect with Stripe in the wizard: card checkout held until pickup, and MPP, ACP (ChatGPT) and UCP (Google) agent payments, all on the seller's own Stripe | Claude | 4-6 h |
 | Our fee: an application fee per collected order, taken by Stripe at payment | Dave decides the price | |

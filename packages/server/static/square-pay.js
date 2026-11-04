@@ -70,6 +70,22 @@
     }),
   );
 
+  // Apple Pay, in Safari on Apple devices, once Square has validated the domain. Apple wants the payment sheet
+  // opened straight from the click, so nothing is awaited before tokenize in pay().
+  const appleButton = document.getElementById("apple-pay");
+  try {
+    if (!appleButton || !window.ApplePaySession) throw new Error("no Apple Pay here");
+    const request = payments.paymentRequest({ countryCode: cfg.country, currencyCode: cfg.currency, total: { amount: cfg.amount, label: "Total" } });
+    const applePay = await payments.applePay(request);
+    appleButton.hidden = false;
+    appleButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      pay(applePay);
+    });
+  } catch {
+    appleButton?.remove();
+  }
+
   // Google Pay, where the browser offers it. No button shows otherwise.
   try {
     const request = payments.paymentRequest({ countryCode: cfg.country, currencyCode: cfg.currency, total: { amount: cfg.amount, label: "Total" } });

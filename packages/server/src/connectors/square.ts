@@ -323,6 +323,29 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
     });
   }
 
+  /**
+   * Apple Pay on the Web: register the checkout's domain with Square, with this seller's token, once. Square
+   * then validates it against the file at /.well-known/apple-developer-merchantid-domain-association. A failure
+   * is tried again an hour later.
+   */
+  let applePay: { at: number; done: boolean; pending?: Promise<void> } | null = null;
+  function registerApplePay(baseUrl: string) {
+    const { protocol, hostname } = new URL(baseUrl);
+    // Apple Pay needs HTTPS on a real domain.
+    if (protocol !== "https:" || hostname === "localhost" || /^[\d.]+$|^\[/.test(hostname)) return;
+    if (applePay && (applePay.done || applePay.pending || Date.now() - applePay.at < 3600_000)) return;
+    const pending = call<{ status?: string }>("POST", "/v2/apple-pay/domains", { domain_name: hostname })
+      .then((r) => {
+        applePay = { at: Date.now(), done: true };
+        console.log(`[collect] square: Apple Pay registered for ${hostname} (${r.status ?? "ok"})`);
+      })
+      .catch((err) => {
+        applePay = { at: Date.now(), done: false };
+        console.error(`[collect] square: registering ${hostname} for Apple Pay failed:`, err);
+      });
+    applePay = { at: Date.now(), done: false, pending };
+  }
+
   /** GET /connect/square/pay/:id shows the card form; POST charges the card on the Square order. */
   function mountCheckout(app: Parameters<NonNullable<PickupConnector["routes"]>>[0], ctx: ConnectorContext, applicationId: string) {
     const sdk = cfg.environment === "production" ? "https://web.squarecdn.com/v1/square.js" : "https://sandbox.web.squarecdn.com/v1/square.js";
@@ -333,6 +356,7 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
       const order = await ctx.getOrder(c.req.param("id"));
       if (!order || order.rail !== "square") return c.html(notFoundPage(), 404);
       if (order.status !== "awaiting_payment") return c.redirect(thanks(order.id));
+      registerApplePay(ctx.baseUrl);
       // Square prices the order, its taxes included, so the page shows exactly what the card is charged.
       const sq = await createSquareOrder(order, ctx, false);
       const total = sq.total_money ?? { amount: order.totalCents, currency: ctx.currency.toUpperCase() };
@@ -344,7 +368,8 @@ export function squareConnector(cfg: SquareConnectorConfig): PickupConnector {
   <p class="muted">${items}</p>
   ${order.customerEmail ? "" : `<label class="label" for="payEmail" style="display:block;text-align:left;margin-top:14px">Email for your pickup QR</label>
   <input type="email" id="payEmail" placeholder="you@example.com" autocomplete="email" required style="margin-top:6px">`}
-  <div id="google-pay" style="margin:16px 0 0"></div>
+  <button id="apple-pay" type="button" hidden aria-label="Pay with Apple Pay" style="display:block;width:100%;height:48px;margin:16px 0 0;border-radius:12px;-webkit-appearance:-apple-pay-button;-apple-pay-button-type:plain;-apple-pay-button-style:black"></button>
+  <div id="google-pay" style="margin:12px 0 0"></div>
   <div id="card-container" style="margin-top:14px;min-height:96px"></div>
   <button class="btn block" id="pay" type="button" disabled>Pay ${esc(price)}</button>
   <p class="muted" id="payMsg" role="status" style="margin-top:10px">Loading the card form…</p>

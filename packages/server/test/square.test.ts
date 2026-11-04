@@ -36,6 +36,8 @@ class FakeSquare {
   refunds: Record<string, unknown>[] = [];
   calls: string[] = [];
   failNext = 0;
+  /** Domains registered for Apple Pay on the Web. */
+  applePayDomains: string[] = [];
   /** The seller's online checkout button colour; Square's blue until they change it. */
   checkoutColour = "#006aff";
   private idem = new Map<string, unknown>();
@@ -119,6 +121,10 @@ class FakeSquare {
     };
 
     if (method === "GET" && url.pathname === `/v2/locations/${LOCATION}`) return reply(200, { location: this.location });
+    if (method === "POST" && url.pathname === "/v2/apple-pay/domains") {
+      this.applePayDomains.push(body.domain_name);
+      return reply(200, { status: "VERIFIED" });
+    }
     if (method === "GET" && url.pathname === `/v2/online-checkout/location-settings/${LOCATION}`) {
       return reply(200, { location_settings: { location_id: LOCATION, branding: { header_type: "BUSINESS_NAME", button_color: this.checkoutColour, button_shape: "ROUNDED" } } });
     }
@@ -628,6 +634,7 @@ test("square cards: the buyer pays on the checkout page, the card is charged on 
   assert.match(page, /"appId":"sandbox-sq0idb-test"/);
   assert.match(page, /"amount":"18\.40","currency":"AUD","country":"AU"/, "Square's own total, and the location's country for Google Pay");
   assert.match(page, /"needsEmail":true/);
+  assert.match(page, /id="apple-pay" type="button" hidden/, "an Apple Pay button, shown only where Safari can use it");
   assert.equal((await shop.call("/collect-assets/square-pay.js")).status, 200);
 
   assert.equal((await pay(shop, order.id, { sourceId: "cnon:card-nonce-ok" })).status, 400, "the QR needs an email");
@@ -653,6 +660,8 @@ test("square cards: the buyer pays on the checkout page, the card is charged on 
   assert.match((await shop.store.getLatestEmail(order.id))!.html, /Card, through the shop&#39;s Square|Card, through the shop's Square/);
 
   assert.equal((await shop.call(`/connect/square/pay/${order.id}`)).status, 302, "a paid order's checkout goes to its thanks page");
+  await cardOrder(shop).then(({ order: another }) => shop.call(`/connect/square/pay/${another.id}`));
+  assert.deepEqual(square.applePayDomains, ["shop.test"], "the domain is registered for Apple Pay once, with the seller's token");
   assert.equal((await pay(shop, order.id, { sourceId: "cnon:card-nonce-ok", email: "robin@example.com" })).status, 200, "paying again changes nothing");
   assert.equal(square.payments.length, 1);
 
